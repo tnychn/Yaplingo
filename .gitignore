@@ -1,2 +1,9 @@
+<<<<<<< HEAD
 .DS_Store
 .env
+=======
+/.expo/
+/ios/
+/android/
+/node_modules/
+>>>>>>> 49953fc (UI commit)

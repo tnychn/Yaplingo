@@ -1,27 +1,56 @@
-import React from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useFonts } from "expo-font";
-import { Stack } from "expo-router";
-import * as SplashScreen from "expo-splash-screen";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { Tabs } from "expo-router"
+import { ThemeProvider } from "../contexts/ThemeContext"
+import { Home, FileText, Settings } from "lucide-react-native"
 
-const client = new QueryClient();
-
-SplashScreen.preventAutoHideAsync();
+const client = new QueryClient()
 
 export default function RootLayout() {
-  const [loaded] = useFonts({
-    "Feather-Bold": require("@/fonts/Feather-Bold.otf"),
-  });
-
-  React.useEffect(() => {
-    if (loaded) SplashScreen.hide();
-  });
-
-  if (!loaded) return null;
-
   return (
     <QueryClientProvider client={client}>
-      <Stack screenOptions={{ headerShown: false }} />
+      <ThemeProvider>
+        <Tabs
+          screenOptions={{
+            headerShown: false,
+            tabBarStyle: {
+              backgroundColor: "#000000",
+              borderTopColor: "#1a1a1a",
+              borderTopWidth: 1,
+              height: 85,
+              paddingBottom: 25,
+              paddingTop: 10,
+            },
+            tabBarActiveTintColor: "#00d9ff",
+            tabBarInactiveTintColor: "#6b7280",
+            tabBarLabelStyle: {
+              fontSize: 11,
+              fontWeight: "600",
+            },
+          }}
+        >
+          <Tabs.Screen
+            name="index"
+            options={{
+              title: "Practice",
+              tabBarIcon: ({ color, size }) => <Home size={size} color={color} />,
+            }}
+          />
+          <Tabs.Screen
+            name="articles"
+            options={{
+              title: "Articles",
+              tabBarIcon: ({ color, size }) => <FileText size={size} color={color} />,
+            }}
+          />
+          <Tabs.Screen
+            name="settings"
+            options={{
+              title: "Settings",
+              tabBarIcon: ({ color, size }) => <Settings size={size} color={color} />,
+            }}
+          />
+        </Tabs>
+      </ThemeProvider>
     </QueryClientProvider>
-  );
+  )
 }

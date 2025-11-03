@@ -9,6 +9,7 @@
       "expo-router",
       "expo-audio",
       "expo-font",
+      "expo-av",
       "expo-dev-client",
       [
         "expo-splash-screen",

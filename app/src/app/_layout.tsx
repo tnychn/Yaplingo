@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { Tabs } from "expo-router"
 import { ThemeProvider } from "../contexts/ThemeContext"
-import { Home, FileText, Settings } from "lucide-react-native"
+import { Home, Settings } from "lucide-react-native"
 
 const client = new QueryClient()
 
@@ -33,13 +33,6 @@ export default function RootLayout() {
             options={{
               title: "Practice",
               tabBarIcon: ({ color, size }) => <Home size={size} color={color} />,
-            }}
-          />
-          <Tabs.Screen
-            name="articles"
-            options={{
-              title: "Articles",
-              tabBarIcon: ({ color, size }) => <FileText size={size} color={color} />,
             }}
           />
           <Tabs.Screen

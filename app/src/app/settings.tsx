@@ -139,7 +139,7 @@ export default function SettingsScreen() {
         {
           id: "notifications",
           title: "Notifications",
-          description: "Receive learning reminders and updates",
+          description: "Receive updates and alerts",
           icon: Bell,
           type: "toggle" as const,
           value: notifications,
@@ -157,15 +157,8 @@ export default function SettingsScreen() {
       ],
     },
     {
-      title: "Account",
+      title: "Personalization",
       items: [
-        {
-          id: "language",
-          title: "Language",
-          description: "Choose your learning language",
-          icon: Globe,
-          type: "navigation" as const,
-        },
         {
           id: "profile",
           title: "Profile",
@@ -174,9 +167,16 @@ export default function SettingsScreen() {
           type: "navigation" as const,
         },
         {
+          id: "history",
+          title: "History",
+          description: "View your activity history",
+          icon: Globe,
+          type: "navigation" as const,
+        },
+        {
           id: "privacy",
           title: "Privacy & Security",
-          description: "Control your data and privacy",
+          description: "Manage your data and privacy",
           icon: Shield,
           type: "navigation" as const,
         },

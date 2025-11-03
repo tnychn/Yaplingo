@@ -1,49 +1,132 @@
 "use client"
 
 import { useEffect, useState, useRef } from "react"
-import { Alert, Pressable, Text, View, ScrollView, Animated, StatusBar } from "react-native"
-import { useMutation } from "@tanstack/react-query"
+import { Alert, Pressable, Text, View, ScrollView, Animated, StatusBar, ActivityIndicator } from "react-native"
 import { AudioModule, AudioQuality, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from "expo-audio"
-import axios from "axios"
+import * as Speech from "expo-speech"
 import tw from "twrnc"
-import { Mic, Square, Loader2, CheckCircle2, XCircle, Sparkles, Zap, TrendingUp } from "lucide-react-native"
+import { Mic, Square, Volume2, RefreshCw, Sparkles, Zap } from "lucide-react-native"
 import { useTheme } from "../contexts/ThemeContext"
+import Svg, { Circle, G } from "react-native-svg"
 
-type Result = {
+const API_URL = "http://localhost:8000"
+
+interface Transcript {
+  id: string
+  text: string
+  phonemes: string[]
+}
+
+interface PipelineResult {
   feedback: string
   phonemes: {
-    aligned: {
+    alignments: Array<{
       token: string
       score: number
       interval: [number, number]
-    }[]
-    predicted: string[]
+    }>
+    predictions: string[]
+    differences: Array<{
+      type: "insert" | "delete" | "replace"
+      position: number
+      expected: string
+      predicted: string
+    }>
   }
-} | null
+}
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+
+function PieChart({
+  progress,
+  size = 140,
+  strokeWidth = 18,
+  color,
+  backgroundColor = "#e5e7eb",
+}: {
+  progress: number
+  size?: number
+  strokeWidth?: number
+  color: string
+  backgroundColor?: string
+}) {
+  const animatedProgress = useRef(new Animated.Value(0)).current
+
+  useEffect(() => {
+    Animated.timing(animatedProgress, {
+      toValue: progress,
+      duration: 1000,
+      useNativeDriver: false,
+    }).start()
+  }, [progress])
+
+  const radius = size / 2 - strokeWidth / 2
+  const circumference = 2 * Math.PI * radius
+  const strokeDashoffset = animatedProgress.interpolate({
+    inputRange: [0, 100],
+    outputRange: [circumference, 0],
+  })
+
+  return (
+    <View style={[tw`items-center justify-center`, { width: size, height: size }]}>
+      <Svg height={size} width={size}>
+        <G rotation="-90" origin={`${size / 2}, ${size / 2}`}>
+          <Circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke={backgroundColor}
+            strokeWidth={strokeWidth}
+            fill="transparent"
+          />
+          <AnimatedCircle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke={color}
+            strokeWidth={strokeWidth}
+            fill="transparent"
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+          />
+        </G>
+      </Svg>
+      <View style={tw`absolute items-center`}>
+        <Text style={[tw`text-5xl font-black`, { color }]}>{progress}%</Text>
+        <Text style={[tw`text-sm font-semibold text-center -mt-1`, { color: "#6b7280" }]}>
+          Accuracy
+        </Text>
+      </View>
+    </View>
+  )
+}
 
 export default function HomeScreen() {
   const { colors } = useTheme()
 
-  const [pulseAnim] = useState(new Animated.Value(1))
+  const [transcript, setTranscript] = useState<Transcript | null>(null)
+  const [currentSentence, setCurrentSentence] = useState("")
+  const [isSpeaking, setIsSpeaking] = useState(false)
+  const [status, setStatus] = useState<"idle" | "recording" | "analysing" | "loading">("idle")
+
+  const [feedback, setFeedback] = useState<string>("")
+  const [score, setScore] = useState<number | null>(null)
+
   const fadeAnim = useRef(new Animated.Value(0)).current
   const slideAnim = useRef(new Animated.Value(50)).current
   const headerSlideAnim = useRef(new Animated.Value(-30)).current
   const cardSlideAnim = useRef(new Animated.Value(30)).current
   const buttonScaleAnim = useRef(new Animated.Value(0.8)).current
-  const resultFadeAnim = useRef(new Animated.Value(0)).current
-  const resultSlideAnim = useRef(new Animated.Value(20)).current
-  const [glowAnim] = useState(new Animated.Value(0))
   const rotateAnim = useRef(new Animated.Value(0)).current
-  const bounceAnim = useRef(new Animated.Value(0)).current
-  const waveAnim1 = useRef(new Animated.Value(0)).current
-  const waveAnim2 = useRef(new Animated.Value(0)).current
-  const waveAnim3 = useRef(new Animated.Value(0)).current
   const shimmerAnim = useRef(new Animated.Value(0)).current
   const floatAnim = useRef(new Animated.Value(0)).current
-  const scaleAnim = useRef(new Animated.Value(1)).current
   const cardRotateAnim = useRef(new Animated.Value(0)).current
+
+  // New animations for buttons
+  const buttonPulseAnim = useRef(new Animated.Value(1)).current
+  const recordPulseAnim = useRef(new Animated.Value(1)).current
+  const iconFloatAnim = useRef(new Animated.Value(0)).current
 
   const recorder = useAudioRecorder({
     extension: ".wav",
@@ -62,20 +145,30 @@ export default function HomeScreen() {
   })
   const recorderState = useAudioRecorderState(recorder)
 
-  const mutation = useMutation({
-    mutationFn: async (uri: string) => {
-      const data = new FormData()
-      // @ts-expect-error React Native FormData issue
-      data.append("audio", { uri, name: "audio.wav", type: "audio/vnd.wav" })
-      const response = await axios.post(`${API_URL}/teach/1`, data, {
-        validateStatus: () => true,
-      })
-      if (response.status !== 200) {
-        throw new Error(response.data as string)
+  async function fetchNewSentence() {
+    try {
+      setStatus("loading")
+      setFeedback("")
+      setScore(null)
+      
+      const response = await fetch(`${API_URL}/`)
+      if (!response.ok) {
+        throw new Error("Failed to fetch sentence")
       }
-      return response.data as Result
-    },
-  })
+      const data: Transcript = await response.json()
+      setTranscript(data)
+      setCurrentSentence(data.text)
+      setStatus("idle")
+    } catch (error) {
+      console.error("Error fetching sentence:", error)
+      Alert.alert("Error", "Could not fetch a new sentence from the server. Make sure the backend is running.")
+      setStatus("idle")
+    }
+  }
+
+  useEffect(() => {
+    fetchNewSentence()
+  }, [])
 
   useEffect(() => {
     Animated.parallel([
@@ -111,6 +204,58 @@ export default function HomeScreen() {
         useNativeDriver: true,
       }),
     ]).start()
+
+    // Button subtle pulse animation
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(buttonPulseAnim, {
+          toValue: 1.02,
+          duration: 2000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(buttonPulseAnim, {
+          toValue: 1,
+          duration: 2000,
+          useNativeDriver: true,
+        }),
+      ]),
+    ).start()
+
+    // Record button special pulse when recording
+    if (status === "recording") {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(recordPulseAnim, {
+            toValue: 1.08,
+            duration: 600,
+            useNativeDriver: true,
+          }),
+          Animated.timing(recordPulseAnim, {
+            toValue: 1,
+            duration: 600,
+            useNativeDriver: true,
+          }),
+        ]),
+      ).start()
+    } else {
+      recordPulseAnim.setValue(1)
+    }
+
+    // Icon float animation
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(iconFloatAnim, {
+          toValue: -2,
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+        Animated.timing(iconFloatAnim, {
+          toValue: 0,
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+      ]),
+    ).start()
 
     Animated.loop(
       Animated.sequence([
@@ -164,144 +309,118 @@ export default function HomeScreen() {
         }),
       ]),
     ).start()
-  }, [])
-
-  useEffect(() => {
-    ;(async () => {
-      const status = await AudioModule.requestRecordingPermissionsAsync()
-      if (!status.granted) return Alert.alert("Permission Denied")
-    })()
-  }, [])
-
-  useEffect(() => {
-    if (recorderState.isRecording) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 1.2,
-            duration: 700,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 1,
-            duration: 700,
-            useNativeDriver: true,
-          }),
-        ]),
-      ).start()
-
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(glowAnim, {
-            toValue: 1,
-            duration: 1200,
-            useNativeDriver: true,
-          }),
-          Animated.timing(glowAnim, {
-            toValue: 0,
-            duration: 1200,
-            useNativeDriver: true,
-          }),
-        ]),
-      ).start()
-
-      Animated.loop(
-        Animated.timing(waveAnim1, {
-          toValue: 1,
-          duration: 1500,
-          useNativeDriver: true,
-        }),
-      ).start()
-
-      Animated.loop(
-        Animated.timing(waveAnim2, {
-          toValue: 1,
-          duration: 2000,
-          useNativeDriver: true,
-        }),
-      ).start()
-
-      Animated.loop(
-        Animated.timing(waveAnim3, {
-          toValue: 1,
-          duration: 2500,
-          useNativeDriver: true,
-        }),
-      ).start()
-
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(bounceAnim, {
-            toValue: -5,
-            duration: 500,
-            useNativeDriver: true,
-          }),
-          Animated.timing(bounceAnim, {
-            toValue: 0,
-            duration: 500,
-            useNativeDriver: true,
-          }),
-        ]),
-      ).start()
-    } else {
-      pulseAnim.setValue(1)
-      glowAnim.setValue(0)
-      waveAnim1.setValue(0)
-      waveAnim2.setValue(0)
-      waveAnim3.setValue(0)
-      bounceAnim.setValue(0)
-    }
-  }, [recorderState.isRecording])
-
-  useEffect(() => {
-    if (mutation.isSuccess || mutation.isError) {
-      resultFadeAnim.setValue(0)
-      resultSlideAnim.setValue(30)
-      scaleAnim.setValue(0.8)
-
-      Animated.parallel([
-        Animated.timing(resultFadeAnim, {
-          toValue: 1,
-          duration: 700,
-          useNativeDriver: true,
-        }),
-        Animated.spring(resultSlideAnim, {
-          toValue: 0,
-          tension: 45,
-          friction: 8,
-          useNativeDriver: true,
-        }),
-        Animated.spring(scaleAnim, {
-          toValue: 1,
-          tension: 50,
-          friction: 7,
-          useNativeDriver: true,
-        }),
-      ]).start()
-    }
-  }, [mutation.isSuccess, mutation.isError])
+  }, [status])
 
   async function startRecording() {
-    await setAudioModeAsync({
-      allowsRecording: true,
-      playsInSilentMode: true,
-    })
-    await recorder.prepareToRecordAsync()
-    recorder.record()
-    mutation.reset()
-  }
+    try {
+const permissionStatus = await AudioModule.requestRecordingPermissionsAsync()
+console.log("Microphone Permission:", permissionStatus)
 
-  async function stopRecording() {
-    await recorder.stop()
-    if (recorder.uri) {
-      mutation.mutate(recorder.uri)
+if (!permissionStatus.granted) {
+  Alert.alert("Permission Denied", "Go to Simulator Settings → Privacy → Microphone → Enable Expo Go")
+  return
+}
+
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
+      })
+      await recorder.prepareToRecordAsync()
+      await recorder.record()
+      setStatus("recording")
+    } catch (error) {
+      console.error("Failed to start recording", error)
+      Alert.alert("Error", "Could not start recording.")
+      setStatus("idle")
     }
   }
 
-  const glowOpacity = glowAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.2, 0.9],
-  })
+async function stopRecording() {
+  try {
+    console.log("Stopping recorder…")
+    await recorder.stop()
+
+    setStatus("analysing")
+
+    // POLL UNTIL URI IS READY (max 5 seconds)
+    let uri: string | undefined
+    const maxWait = 5000
+    const start = Date.now()
+
+    while (!uri && Date.now() - start < maxWait) {
+      uri = recorderState.uri
+      if (uri) {
+        console.log("URI ready →", uri)
+        break
+      }
+      await new Promise(r => setTimeout(r, 100)) // check every 100ms
+    }
+
+    if (!uri) {
+      Alert.alert("Error", "Recording failed to save (timeout). Try again.")
+      setStatus("idle")
+      return
+    }
+
+    if (!transcript) {
+      Alert.alert("Error", "No sentence loaded. Tap 'Change' first.")
+      setStatus("idle")
+      return
+    }
+
+    // SEND TO BACKEND
+    const fileRes = await fetch(uri)
+    const blob = await fileRes.blob()
+
+    const form = new FormData()
+    form.append("audio", blob as any, "recording.wav")
+
+    const analysisRes = await fetch(`${API_URL}/${transcript.id}/teach`, {
+      method: "POST",
+      body: form,
+    })
+
+    if (!analysisRes.ok) {
+      const txt = await analysisRes.text()
+      console.error("Backend error:", txt)
+      throw new Error("Backend failed")
+    }
+
+    const result: PipelineResult = await analysisRes.json()
+    const total = result.phonemes.predictions.length
+    const errors = result.phonemes.differences.length
+    const score = total > 0 ? Math.round(((total - errors) / total) * 100) : 0
+
+    setFeedback(result.feedback || "Great job!")
+    setScore(score)
+    setStatus("idle")
+  } catch (e: any) {
+    console.error("stopRecording error:", e)
+    Alert.alert("Error", e.message || "Analysis failed")
+    setStatus("idle")
+  }
+}
+
+  async function speakSentence() {
+    if (isSpeaking) {
+      Speech.stop()
+      setIsSpeaking(false)
+    } else {
+      setIsSpeaking(true)
+      Speech.speak(currentSentence, {
+        language: "en-US",
+        pitch: 1.0,
+        rate: 0.8,
+        onDone: () => setIsSpeaking(false),
+        onStopped: () => setIsSpeaking(false),
+        onError: () => setIsSpeaking(false),
+      })
+    }
+  }
+
+  function changeSentence() {
+    fetchNewSentence()
+  }
 
   const rotate = rotateAnim.interpolate({
     inputRange: [0, 1],
@@ -318,47 +437,14 @@ export default function HomeScreen() {
     outputRange: ["-1deg", "1deg"],
   })
 
-  const wave1Scale = waveAnim1.interpolate({
+  const iconTranslateY = iconFloatAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [1, 2.5],
-  })
-
-  const wave1Opacity = waveAnim1.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.6, 0],
-  })
-
-  const wave2Scale = waveAnim2.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1, 2.2],
-  })
-
-  const wave2Opacity = waveAnim2.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.4, 0],
-  })
-
-  const wave3Scale = waveAnim3.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1, 1.9],
-  })
-
-  const wave3Opacity = waveAnim3.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.3, 0],
+    outputRange: [0, -2],
   })
 
   return (
-    <View style={[tw`flex-1`, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle="light-content" />
-
-      <Animated.View style={[tw`absolute inset-0 opacity-5`, { transform: [{ rotate }] }]}>
-        <View style={tw`flex-1`}>
-          {[...Array(25)].map((_, i) => (
-            <View key={i} style={[tw`h-px`, { backgroundColor: colors.text }]} />
-          ))}
-        </View>
-      </Animated.View>
+    <View style={tw`flex-1 bg-yellow-50`}>
+      <StatusBar barStyle="dark-content" />
 
       <Animated.View
         style={[
@@ -369,19 +455,33 @@ export default function HomeScreen() {
           },
         ]}
       >
-        <View style={tw`flex-row items-center gap-3 mb-2`}>
-          <Animated.View
+        <View style={tw`flex-row items-center justify-center mb-2`}>
+          <Animated.View style={[tw`mr-3`, { transform: [{ translateY: floatAnim }] }]}>
+            <Text style={tw`text-3xl`}>🗣️</Text>
+          </Animated.View>
+          
+          <Text
             style={[
-              tw`w-1.5 h-10 rounded-full`,
-              { backgroundColor: colors.accent, transform: [{ rotate: cardRotate }] },
+              tw`text-6xl font-black tracking-tight text-center`,
+              {
+                color: colors.accent,
+                fontStyle: "italic",
+                textShadowColor: "rgba(139, 18, 232, 0.5)",
+                textShadowOffset: { width: 4, height: 4 },
+                textShadowRadius: 12,
+              },
             ]}
-          />
-          <Text style={[tw`text-4xl font-bold tracking-tight`, { color: colors.text }]}>Yaplingo</Text>
-          <Animated.View style={[tw`ml-2`, { transform: [{ translateY: floatAnim }] }]}>
-            <Sparkles size={20} color={colors.accent} />
+          >
+            Yaplingo
+          </Text>
+          
+          <Animated.View style={[tw`ml-3`, { transform: [{ translateY: floatAnim }] }]}>
+            <Text style={tw`text-3xl`}>🎙️</Text>
           </Animated.View>
         </View>
-        <Text style={[tw`text-base ml-4`, { color: colors.textSecondary }]}>AI-powered pronunciation training</Text>
+        <Text style={[tw`text-base font-bold text-center mt-1`, { color: colors.text }]}>
+          Practice Your English Pronunciation!
+        </Text>
       </Animated.View>
 
       <ScrollView style={tw`flex-1`} contentContainerStyle={tw`px-6 pb-8`}>
@@ -410,22 +510,27 @@ export default function HomeScreen() {
           <View style={tw`flex-row items-center justify-between mb-5`}>
             <View>
               <Text style={[tw`text-xs uppercase tracking-wider mb-1.5`, { color: colors.textSecondary }]}>
-                Current Lesson
+                Practice Sentence
               </Text>
-              <Text style={[tw`text-2xl font-bold`, { color: colors.text }]}>Lesson 1</Text>
             </View>
-            <Animated.View
-              style={[
-                tw`px-5 py-2.5 rounded-full border`,
-                {
-                  backgroundColor: `${colors.accent}1A`,
-                  borderColor: `${colors.accent}33`,
-                  transform: [{ scale: scaleAnim }],
-                },
-              ]}
-            >
-              <Text style={[tw`text-sm font-semibold`, { color: colors.accent }]}>Active</Text>
-            </Animated.View>
+          </View>
+
+          <View style={[tw`h-px my-5`, { backgroundColor: colors.border }]} />
+
+          <View
+            style={[
+              tw`rounded-2xl p-6 border`,
+              { backgroundColor: `${colors.background}66`, borderColor: colors.border },
+            ]}
+          >
+            {status === "loading" ? (
+              <View style={tw`items-center py-4`}>
+                <ActivityIndicator size="large" color={colors.accent} />
+                <Text style={[tw`text-base mt-2`, { color: colors.textSecondary }]}>Loading sentence...</Text>
+              </View>
+            ) : (
+              <Text style={[tw`text-xl leading-8 text-center`, { color: colors.text }]}>{currentSentence}</Text>
+            )}
           </View>
 
           <View style={[tw`h-px my-5`, { backgroundColor: colors.border }]} />
@@ -436,302 +541,203 @@ export default function HomeScreen() {
               { backgroundColor: `${colors.background}66`, borderColor: colors.border },
             ]}
           >
-            <View style={tw`flex-row items-center gap-2 mb-2`}>
-              <Zap size={14} color={colors.accent} />
-              <Text style={[tw`text-xs uppercase tracking-wider`, { color: colors.textSecondary }]}>Instructions</Text>
-            </View>
-            <Text style={[tw`text-base leading-6`, { color: colors.textSecondary }]}>
-              Press the microphone button and speak clearly. Our AI will analyze your pronunciation and provide instant
-              feedback.
-            </Text>
+            {feedback || score !== null ? (
+              <>
+                <View style={tw`flex-row items-center gap-2 mb-3`}>
+                  <Sparkles size={16} color={colors.accent} />
+                  <Text style={[tw`text-xs uppercase tracking-wider font-bold`, { color: colors.accent }]}>
+                    Your Results
+                  </Text>
+                </View>
+                {score !== null && (
+                  <View style={tw`items-center mb-4`}>
+                    <PieChart progress={score} color={colors.accent} />
+                    <Text style={[tw`text-sm text-center font-semibold mt-2`, { color: colors.textSecondary }]}>
+                      Pronunciation Accuracy
+                    </Text>
+                  </View>
+                )}
+                {feedback && (
+                  <View>
+                    <View style={[tw`h-px my-3`, { backgroundColor: colors.border }]} />
+                    <Text style={[tw`text-base leading-6 text-center`, { color: colors.text }]}>{feedback}</Text>
+                  </View>
+                )}
+              </>
+            ) : (
+              <>
+                <View style={tw`flex-row items-center gap-2 mb-3`}>
+                  <Zap size={16} color={colors.accent} />
+                  <Text style={[tw`text-xs uppercase tracking-wider font-bold`, { color: colors.accent }]}>
+                    How It Works
+                  </Text>
+                </View>
+                <Text style={[tw`text-base leading-6`, { color: colors.textSecondary }]}>
+                  👂 Listen to the sentence using the Listen button{"\n"}
+                  🎤 Record yourself saying it clearly{"\n"}
+                  ✨ Get instant AI feedback on your pronunciation{"\n"}
+                  🔄 Try new sentences to keep practicing!
+                </Text>
+              </>
+            )}
           </View>
         </Animated.View>
 
+        {/* Enhanced Buttons Section */}
         <Animated.View
           style={[
-            tw`items-center py-12`,
+            tw`flex-row gap-4 mb-8`,
             {
               opacity: fadeAnim,
               transform: [{ scale: buttonScaleAnim }],
             },
           ]}
         >
-          <View style={tw`relative mb-8`}>
-            {recorderState.isRecording && (
-              <>
-                <Animated.View
-                  style={[
-                    tw`absolute inset-0 rounded-full`,
-                    {
-                      opacity: wave1Opacity,
-                      transform: [{ scale: wave1Scale }],
-                      backgroundColor: "#ef4444",
-                    },
-                  ]}
-                />
-                <Animated.View
-                  style={[
-                    tw`absolute inset-0 rounded-full`,
-                    {
-                      opacity: wave2Opacity,
-                      transform: [{ scale: wave2Scale }],
-                      backgroundColor: "#ef4444",
-                    },
-                  ]}
-                />
-                <Animated.View
-                  style={[
-                    tw`absolute inset-0 rounded-full`,
-                    {
-                      opacity: wave3Opacity,
-                      transform: [{ scale: wave3Scale }],
-                      backgroundColor: "#ef4444",
-                    },
-                  ]}
-                />
-                <Animated.View
-                  style={[
-                    tw`absolute inset-0 rounded-full`,
-                    {
-                      opacity: glowOpacity,
-                      transform: [{ scale: pulseAnim }],
-                      backgroundColor: "#ef4444",
-                      shadowColor: "#ef4444",
-                      shadowOffset: { width: 0, height: 0 },
-                      shadowOpacity: 0.9,
-                      shadowRadius: 50,
-                    },
-                  ]}
-                />
-              </>
-            )}
-
-            <Animated.View
-              style={{
-                transform: [{ scale: pulseAnim }],
-              }}
-            >
-              <Pressable
-                style={({ pressed }) =>
-                  tw.style(
-                    "w-36 h-36 rounded-full items-center justify-center border-2",
-                    recorderState.isRecording ? "bg-red-500 border-red-400/50" : `border-[${colors.accent}]/50`,
-                    !recorderState.isRecording && { backgroundColor: colors.accent },
-                    pressed && "opacity-90",
-                  )
-                }
-                onPress={() => (recorderState.isRecording ? stopRecording() : startRecording())}
-              >
-                {recorderState.isRecording ? (
-                  <Square size={52} color="white" fill="white" />
-                ) : (
-                  <Mic size={52} color="white" />
-                )}
-              </Pressable>
-            </Animated.View>
-          </View>
-
-          <Animated.View style={{ transform: [{ translateY: bounceAnim }] }}>
-            <Text style={[tw`text-xl font-bold mb-2`, { color: colors.text }]}>
-              {recorderState.isRecording ? "Recording..." : "Tap to Record"}
-            </Text>
-          </Animated.View>
-          <Text style={[tw`text-sm text-center px-8`, { color: colors.textSecondary }]}>
-            {recorderState.isRecording ? "Speak clearly into your microphone" : "Press and hold to start recording"}
-          </Text>
-        </Animated.View>
-
-        {mutation.isPending && (
-          <Animated.View
-            style={[
-              tw`rounded-3xl p-8 border items-center`,
-              {
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-                opacity: resultFadeAnim,
-                transform: [{ translateY: resultSlideAnim }, { scale: scaleAnim }],
-              },
-            ]}
-          >
-            <Animated.View
-              style={[
-                tw`w-16 h-16 rounded-full items-center justify-center mb-4`,
-                {
-                  backgroundColor: `${colors.accent}1A`,
-                  transform: [{ rotate }],
-                },
-              ]}
-            >
-              <Loader2 size={36} color={colors.accent} />
-            </Animated.View>
-            <Text style={[tw`text-xl font-bold mb-2`, { color: colors.text }]}>Analyzing...</Text>
-            <Text style={[tw`text-sm text-center`, { color: colors.textSecondary }]}>
-              Our AI is processing your pronunciation
-            </Text>
-          </Animated.View>
-        )}
-
-        {mutation.isSuccess && mutation.data && (
-          <Animated.View
-            style={[
-              tw`rounded-3xl p-6 border`,
-              {
-                backgroundColor: colors.card,
-                borderColor: `${colors.accent}4D`,
-                opacity: resultFadeAnim,
-                transform: [{ translateY: resultSlideAnim }, { scale: scaleAnim }],
-              },
-            ]}
-          >
-            <View style={tw`flex-row items-center gap-4 mb-6`}>
-              <Animated.View
-                style={[
-                  tw`w-14 h-14 rounded-2xl items-center justify-center border`,
+          {/* Listen Button */}
+          <Animated.View style={{ transform: [{ scale: buttonPulseAnim }], flex: 1 }}>
+            <Pressable
+              style={({ pressed }) =>
+                tw.style(
+                  "rounded-2xl p-5 items-center justify-center border shadow-2xl",
+                  isSpeaking 
+                    ? "bg-emerald-500 border-emerald-600" 
+                    : "bg-slate-100 border-slate-700",
+                  pressed && "opacity-95",
                   {
-                    backgroundColor: `${colors.accent}1A`,
-                    borderColor: `${colors.accent}33`,
-                    transform: [{ scale: scaleAnim }],
-                  },
-                ]}
-              >
-                <CheckCircle2 size={28} color={colors.accent} />
-              </Animated.View>
-              <View style={tw`flex-1`}>
-                <Text style={[tw`text-xl font-bold mb-1`, { color: colors.text }]}>Analysis Complete</Text>
-                <View style={tw`flex-row items-center gap-1`}>
-                  <TrendingUp size={14} color={colors.success} />
-                  <Text style={[tw`text-sm`, { color: colors.textSecondary }]}>Here's your detailed feedback</Text>
-                </View>
-              </View>
-            </View>
-
-            <View
-              style={[
-                tw`rounded-2xl p-5 mb-5 border`,
-                { backgroundColor: `${colors.background}99`, borderColor: colors.border },
-              ]}
+                    shadowColor: isSpeaking ? "#10b981" : "#1e293b",
+                    shadowOffset: { width: 0, height: 6 },
+                    shadowOpacity: 0.3,
+                    shadowRadius: 10,
+                    elevation: 8,
+                  }
+                )
+              }
+              onPress={speakSentence}
+              disabled={status !== "idle"}
             >
-              <Text style={[tw`text-xs uppercase tracking-wider mb-3`, { color: colors.textSecondary }]}>
-                AI Feedback
-              </Text>
-              <Text style={[tw`text-base leading-7`, { color: colors.text }]}>{mutation.data.feedback}</Text>
-            </View>
-
-            {mutation.data.phonemes?.aligned && (
-              <View>
-                <Text style={[tw`text-xs uppercase tracking-wider mb-4`, { color: colors.textSecondary }]}>
-                  Phoneme Analysis
+              <View style={tw`items-center`}>
+                <Animated.View 
+                  style={[
+                    tw`p-3 rounded-xl mb-3`,
+                    isSpeaking ? tw`bg-white/20` : tw`bg-blue-500/20`,
+                    { transform: [{ translateY: iconTranslateY }] }
+                  ]}
+                >
+                  <Volume2 
+                    size={24} 
+                    color={isSpeaking ? "white" : "#60a5fa"} 
+                    strokeWidth={2} 
+                    fill={isSpeaking ? "white" : "transparent"}
+                  />
+                </Animated.View>
+                <Text style={[
+                  tw`text-sm font-bold uppercase tracking-wide`,
+                  isSpeaking ? tw`text-white` : tw`text-slate-700`
+                ]}>
+                  Listen
                 </Text>
-                <View style={tw`flex-row flex-wrap gap-2.5`}>
-                  {mutation.data.phonemes.aligned.map((phoneme, idx) => (
+              </View>
+            </Pressable>
+          </Animated.View>
+
+          {/* Record Button */}
+          <Animated.View style={{ 
+            transform: [{ scale: status === "recording" ? recordPulseAnim : buttonPulseAnim }], 
+            flex: 1 
+          }}>
+            <Pressable
+              style={({ pressed }) =>
+                tw.style(
+                  "rounded-2xl p-5 items-center justify-center border shadow-2xl",
+                  status === "recording" 
+                    ? "bg-rose-500 border-rose-600" 
+                    : status === "analysing" 
+                    ? "bg-slate-400 border-slate-500"
+                    : "bg-slate-100 border-slate-700",
+                  pressed && "opacity-95",
+                  {
+                    shadowColor: status === "recording" ? "#f43f5e" : status === "analysing" ? "#94a3b8" : "#1e293b",
+                    shadowOffset: { width: 0, height: 6 },
+                    shadowOpacity: 0.3,
+                    shadowRadius: status === "recording" ? 12 : 10,
+                    elevation: status === "recording" ? 12 : 8,
+                  }
+                )
+              }
+              onPress={() => (status === "recording" ? stopRecording() : startRecording())}
+              disabled={status === "analysing" || status === "loading" || isSpeaking || !currentSentence}
+            >
+              <View style={tw`items-center`}>
+                <View style={tw`relative`}>
+                  <Animated.View 
+                    style={[
+                      tw`p-3 rounded-xl mb-3`,
+                      status === "recording" ? tw`bg-white/20` : status === "analysing" ? tw`bg-white/20` : tw`bg-rose-500/20`,
+                      { transform: [{ translateY: iconTranslateY }] }
+                    ]}
+                  >
+                    {status === "analysing" ? (
+                      <ActivityIndicator size="small" color="white" />
+                    ) : status === "recording" ? (
+                      <Square size={24} color="white" strokeWidth={2} fill="white" />
+                    ) : (
+                      <Mic size={24} color="#f43f5e" strokeWidth={2} />
+                    )}
+                  </Animated.View>
+                  {status === "recording" && (
                     <Animated.View
-                      key={idx}
                       style={[
-                        tw`px-4 py-3 rounded-xl border`,
-                        {
-                          backgroundColor:
-                            phoneme.score >= 0.8
-                              ? `${colors.success}1A`
-                              : phoneme.score >= 0.6
-                                ? `${colors.warning}1A`
-                                : `${colors.error}1A`,
-                          borderColor:
-                            phoneme.score >= 0.8
-                              ? `${colors.success}4D`
-                              : phoneme.score >= 0.6
-                                ? `${colors.warning}4D`
-                                : `${colors.error}4D`,
-                          transform: [{ scale: scaleAnim }],
-                        },
+                        tw`absolute -top-1 -right-1 w-3 h-3 bg-rose-300 rounded-full border border-white`,
+                        { transform: [{ scale: recordPulseAnim }] }
                       ]}
-                    >
-                      <Text
-                        style={[
-                          tw`text-base font-bold mb-1`,
-                          {
-                            color:
-                              phoneme.score >= 0.8
-                                ? colors.success
-                                : phoneme.score >= 0.6
-                                  ? colors.warning
-                                  : colors.error,
-                          },
-                        ]}
-                      >
-                        {phoneme.token}
-                      </Text>
-                      <Text style={[tw`text-xs font-medium`, { color: colors.textSecondary }]}>
-                        {Math.round(phoneme.score * 100)}%
-                      </Text>
-                    </Animated.View>
-                  ))}
+                    />
+                  )}
                 </View>
+                <Text style={[
+                  tw`text-sm font-bold uppercase tracking-wide`,
+                  status === "recording" || status === "analysing" ? tw`text-white` : tw`text-slate-700`
+                ]}>
+                  {status === "recording" ? "Stop" : status === "analysing" ? "Analyzing" : "Record"}
+                </Text>
               </View>
-            )}
+            </Pressable>
           </Animated.View>
-        )}
 
-        {mutation.isError && (
-          <Animated.View
-            style={[
-              tw`rounded-3xl p-6 border`,
-              {
-                backgroundColor: colors.card,
-                borderColor: `${colors.error}4D`,
-                opacity: resultFadeAnim,
-                transform: [{ translateY: resultSlideAnim }, { scale: scaleAnim }],
-              },
-            ]}
-          >
-            <View style={tw`flex-row items-center gap-4 mb-4`}>
-              <View
-                style={[
-                  tw`w-14 h-14 rounded-2xl items-center justify-center border`,
+          {/* Change Button */}
+          <Animated.View style={{ transform: [{ scale: buttonPulseAnim }], flex: 1 }}>
+            <Pressable
+              style={({ pressed }) =>
+                tw.style(
+                  "rounded-2xl p-5 items-center justify-center border shadow-2xl bg-slate-100 border-slate-700",
+                  pressed && "opacity-95",
                   {
-                    backgroundColor: `${colors.error}1A`,
-                    borderColor: `${colors.error}33`,
-                  },
-                ]}
-              >
-                <XCircle size={28} color={colors.error} />
+                    shadowColor: "#1e293b",
+                    shadowOffset: { width: 0, height: 6 },
+                    shadowOpacity: 0.3,
+                    shadowRadius: 10,
+                    elevation: 8,
+                  }
+                )
+              }
+              onPress={changeSentence}
+              disabled={status !== "idle"}
+            >
+              <View style={tw`items-center`}>
+                <Animated.View 
+                  style={[
+                    tw`p-3 rounded-xl mb-3 bg-amber-500/20`,
+                    { transform: [{ translateY: iconTranslateY }] }
+                  ]}
+                >
+                  <RefreshCw size={24} color="#f59e0b" strokeWidth={2} />
+                </Animated.View>
+                <Text style={tw`text-sm font-bold uppercase tracking-wide text-slate-700`}>
+                  Change
+                </Text>
               </View>
-              <Text style={[tw`text-xl font-bold flex-1`, { color: colors.text }]}>Error Occurred</Text>
-            </View>
-            <Text style={[tw`text-sm leading-6`, { color: colors.error }]}>{mutation.error.message}</Text>
+            </Pressable>
           </Animated.View>
-        )}
-
-        {mutation.isSuccess && !mutation.data && (
-          <Animated.View
-            style={[
-              tw`rounded-3xl p-6 border`,
-              {
-                backgroundColor: colors.card,
-                borderColor: `${colors.warning}4D`,
-                opacity: resultFadeAnim,
-                transform: [{ translateY: resultSlideAnim }, { scale: scaleAnim }],
-              },
-            ]}
-          >
-            <View style={tw`flex-row items-center gap-4 mb-4`}>
-              <View
-                style={[
-                  tw`w-14 h-14 rounded-2xl items-center justify-center border`,
-                  {
-                    backgroundColor: `${colors.warning}1A`,
-                    borderColor: `${colors.warning}33`,
-                  },
-                ]}
-              >
-                <Mic size={28} color={colors.warning} />
-              </View>
-              <Text style={[tw`text-xl font-bold flex-1`, { color: colors.text }]}>No Audio Detected</Text>
-            </View>
-            <Text style={[tw`text-sm leading-6`, { color: colors.warning }]}>
-              We couldn't detect any speech. Please try again and speak more clearly.
-            </Text>
-          </Animated.View>
-        )}
+        </Animated.View>
       </ScrollView>
     </View>
   )

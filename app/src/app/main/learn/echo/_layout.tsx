@@ -10,7 +10,7 @@ export default function MainLearnEchoLayout() {
           headerShown: false,
           presentation: "formSheet",
           sheetGrabberVisible: false,
-          sheetAllowedDetents: [0.5],
+          sheetAllowedDetents: [0.5, 1.0],
           sheetExpandsWhenScrolledToEdge: false,
         }}
       />

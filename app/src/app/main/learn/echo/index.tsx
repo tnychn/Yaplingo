@@ -200,7 +200,7 @@ export default function MainLearnEchoScreen() {
         router.navigate(
           {
             pathname: "./feedback",
-            params: { tid: transcript?.id },
+            params: { tid: transcript?.id, text: transcript?.text },
           },
           { relativeToDirectory: true },
         );
@@ -304,13 +304,13 @@ export default function MainLearnEchoScreen() {
               <View style={[tw`mt-5 items-center justify-center`, { top: height / 2 }]}>
                 <View style={tw`flex-row items-center gap-1`}>
                   <FlipHorizontalIcon size={14} color={tw.color("zinc-500")} />
-                  <Text style={tw`text-sm font-medium text-zinc-500`}>
+                  <Text style={tw`text-base font-medium text-zinc-500`}>
                     Tap to see {_flipped ? "text" : "IPA"} transcript
                   </Text>
                 </View>
                 <View style={tw`flex-row items-center gap-1`}>
                   <EarIcon size={14} color={tw.color("zinc-500")} />
-                  <Text style={tw`text-sm font-medium text-zinc-500`}>Long Press to play reference pronunciation</Text>
+                  <Text style={tw`text-base font-medium text-zinc-500`}>Long Press to play reference pronunciation</Text>
                 </View>
               </View>
             </View>

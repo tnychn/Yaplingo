@@ -18,11 +18,13 @@ export type Transcripts = {
 };
 
 export type Result = {
+  target: any;
   feedback: {
     text: string;
     audio: string;
   };
   pronunciation: {
+    text: any;
     alignments: {
       token: string;
       score: number;

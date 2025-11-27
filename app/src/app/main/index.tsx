@@ -67,7 +67,7 @@ const WelcomeMessage = () => {
   const message = WELCOME_MESSAGES[Math.floor(Math.random() * WELCOME_MESSAGES.length)];
   return (
     <View style={tw`mx-4 items-center`}>
-      <Text style={tw`text-xl font-bold`}>
+      <Text style={tw`text-base font-bold`}>
         {"📢  "}
         {message}
       </Text>
@@ -81,9 +81,17 @@ const ActivityCard = () => {
     { date: new Date("2025-11-21"), count: 6 },
     { date: new Date("2025-11-24"), count: 12 },
   ];
+
   return (
     <View style={tw`gap-4 rounded-2xl border-2 border-zinc-500/50 py-4`}>
-      <Text style={tw`px-4 text-2xl font-bold`}>📊 Activity</Text>
+      <View style={tw`flex-row items-center justify-between px-4`}>
+        <Text style={tw`text-2xl font-bold`}>📊 Activity</Text>
+        <View style={tw`flex-row items-center gap-1.5`}>
+          <Text style={tw`text-sm text-zinc-500 dark:text-zinc-400 font-bold`}>
+            Lighter → Darker = More Practices
+          </Text>
+        </View>
+      </View>
       <Heatmap entries={entries} contentContainerStyle={tw`px-4`} />
     </View>
   );
@@ -108,7 +116,10 @@ const DailyGoalsCard = () => {
 export default function MainHomeScreen() {
   useNavigationOptions({ header: () => <Header /> });
   return (
-    <ScrollView contentContainerStyle={tw`flex-1 gap-4 p-4`} alwaysBounceVertical={false}>
+    <ScrollView 
+      contentContainerStyle={tw`gap-4 p-4 pb-8`} 
+      alwaysBounceVertical={false}
+    >
       <StreakMeter />
       <WelcomeMessage />
       <ActivityCard />

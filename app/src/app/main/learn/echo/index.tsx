@@ -379,6 +379,7 @@ export default function MainLearnEchoScreen() {
 
   // XP check-in tracking
   const recordedIndices = useRef(new Set<number>());
+  const attemptDurationsMs = useRef<Record<number, number>>({});
   const [comboStreak, setComboStreak] = useState(0);
 
   const currentProgress = session.data && "progress" in session.data ? session.data.progress : -1;
@@ -394,14 +395,20 @@ export default function MainLearnEchoScreen() {
 
     recordedIndices.current.add(currentProgress);
 
+    const completionMsRaw = attemptDurationsMs.current[currentProgress];
+
     const recordXP = async (xp: number, accuracy: number, topic?: string) => {
       const safeXP = Number.isFinite(xp) ? Math.max(1, Math.round(xp)) : 10;
       const safeAccuracy = Number.isFinite(accuracy) ? Math.min(100, Math.max(0, Math.round(accuracy))) : undefined;
+      const safeCompletionMs = Number.isFinite(completionMsRaw)
+        ? Math.max(0, Math.round(completionMsRaw))
+        : undefined;
       try {
         await checkInMutation.mutateAsync({
           xp_amount: safeXP,
           topic: normalizeTopic(topic),
           accuracy_percentage: safeAccuracy,
+          completion_time_ms: safeCompletionMs,
         });
       } catch {
         // Non-fatal: XP recording failure should not block the session
@@ -415,7 +422,7 @@ export default function MainLearnEchoScreen() {
     setComboStreak(newCombo);
     const bonusXP = COMBO_MILESTONES[newCombo];
     if (bonusXP !== undefined) {
-      void recordXP(bonusXP, 0, sessionTopic);
+      void recordXP(bonusXP, 0);
     }
   }, [result, currentProgress]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -498,6 +505,9 @@ export default function MainLearnEchoScreen() {
       });
     }
     if (recorder.uri && duration >= RECORDING_DURATION_THRESHOLD) {
+      if (session.data && "progress" in session.data && session.data.progress >= 0) {
+        attemptDurationsMs.current[session.data.progress] = Math.round(duration);
+      }
       const audio = await getLocalFileBase64(recorder.uri);
       const result = await submit(audio);
       if (result === null) {

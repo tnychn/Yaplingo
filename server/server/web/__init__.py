@@ -5,12 +5,14 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import PlainTextResponse
 from starlette.exceptions import HTTPException
 
+from server.logging_config import configure_runtime_logging
 from server.service import Service
 from server.web.routers import auth, echo, gamification
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    configure_runtime_logging()
     app.state.service = await Service.create()
     yield
     await app.state.service.dispose()

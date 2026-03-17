@@ -5,6 +5,7 @@ from taskiq import AsyncTaskiqDecoratedTask, AsyncTaskiqTask, TaskiqEvents, Task
 from taskiq_redis import RedisAsyncResultBackend, RedisStreamBroker
 from ulid import ULID
 
+from server.logging_config import configure_runtime_logging
 from server.core.pipeline import Pipeline
 from server.core.textspeech import KokoroTextSpeech
 
@@ -32,6 +33,7 @@ class Broker:
     @staticmethod
     @broker.on_event(TaskiqEvents.WORKER_STARTUP)
     async def startup(state: TaskiqState):
+        configure_runtime_logging()
         state.pipeline = Pipeline()
         state.ktts = KokoroTextSpeech()
 

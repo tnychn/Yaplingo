@@ -1,9 +1,13 @@
+import logging
+
 import torch
 import torchaudio
 from transformers import Wav2Vec2ForCTC, Wav2Vec2PhonemeCTCTokenizer, Wav2Vec2Processor
 
 from ..models import Pronunciation, Transcript
 from .processor import AudioProcessor
+
+logger = logging.getLogger(__name__)
 
 
 class PronunciationAligner:
@@ -87,10 +91,9 @@ class PronunciationAligner:
         predicted_phonemes = self.predict_phonemes(logits)
         aligned_phonemes = self.align_phonemes(logits, transcript)
         if len(aligned_phonemes) != len(transcript.phonemes):
-            print(
-                "alignment length mismatch:",
+            logger.debug(
+                "alignment length mismatch: %s != %s",
                 len(aligned_phonemes),
-                "!=",
                 len(transcript.phonemes),
             )
             aligned_phonemes = self.normalize_alignments(aligned_phonemes, transcript)

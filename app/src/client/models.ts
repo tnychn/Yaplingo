@@ -109,7 +109,13 @@ export type AchievementResponse = {
 };
 
 export type SpendGemsRequest = { item_key: string };
-export type SpendGemsResponse = { new_balance: number; item_key: string };
+export type SpendGemsResponse = {
+  new_balance: number;
+  item_key: string;
+  xp_added: number;
+  weekly_total_xp: number | null;
+  lifetime_total_xp: number | null;
+};
 
 export type ClaimAchievementRequest = { achievement_key: string };
 export type ClaimAchievementResponse = {

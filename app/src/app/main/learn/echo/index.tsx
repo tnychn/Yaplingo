@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Dimensions, Modal, Pressable, ScrollView, View } from "react-native";
 import Animated, {
   FadeIn,
@@ -38,12 +38,13 @@ import {
   RedoIcon,
   XIcon,
 } from "lucide-react-native";
+import { Portal } from "@gorhom/portal";
 import tw from "twrnc";
 
 import { EchoSessionStatus, useEchoSession, type EchoSession, type Result, type Summary } from "~/client/echo";
 import { useCheckInMutation } from "~/client";
 import type { Topic } from "~/client/models";
-import { Spinner, Text } from "~/components";
+import { GainToast, Spinner, Text } from "~/components";
 import { useNavigationOptions } from "~/hooks";
 import { getLocalFileBase64 } from "~/utils";
 
@@ -376,6 +377,7 @@ export default function MainLearnEchoScreen() {
 
   const [playbacking, setPlaybacking] = useState(false);
   const [showResultSheet, setShowResultSheet] = useState(false);
+  const [gainToasts, setGainToasts] = useState<{ id: string; message: string }[]>([]);
 
   // XP check-in tracking
   const recordedIndices = useRef(new Set<number>());
@@ -383,6 +385,14 @@ export default function MainLearnEchoScreen() {
   const [comboStreak, setComboStreak] = useState(0);
 
   const currentProgress = session.data && "progress" in session.data ? session.data.progress : -1;
+
+  const removeGainToast = useCallback((id: string) => {
+    setGainToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const announceGain = useCallback((message: string) => {
+    setGainToasts((prev) => [...prev, { id: `${Date.now()}-${Math.random()}`, message }]);
+  }, []);
 
   // Record XP when a score becomes available for a sentence
   useEffect(() => {
@@ -397,34 +407,48 @@ export default function MainLearnEchoScreen() {
 
     const completionMsRaw = attemptDurationsMs.current[currentProgress];
 
-    const recordXP = async (xp: number, accuracy: number, topic?: string) => {
+    const recordXP = async (
+      xp: number,
+      accuracy: number,
+      source: "practice_sentence" | "combo_bonus",
+      topic?: string,
+    ) => {
       const safeXP = Number.isFinite(xp) ? Math.max(1, Math.round(xp)) : 10;
       const safeAccuracy = Number.isFinite(accuracy) ? Math.min(100, Math.max(0, Math.round(accuracy))) : undefined;
-      const safeCompletionMs = Number.isFinite(completionMsRaw)
+      const safeCompletionMs = source === "practice_sentence" && Number.isFinite(completionMsRaw)
         ? Math.max(0, Math.round(completionMsRaw))
         : undefined;
       try {
-        await checkInMutation.mutateAsync({
+        const res = await checkInMutation.mutateAsync({
           xp_amount: safeXP,
+          source,
           topic: normalizeTopic(topic),
           accuracy_percentage: safeAccuracy,
           completion_time_ms: safeCompletionMs,
         });
+        const gainParts = [`+${safeXP} XP`];
+        if (res.gems_earned > 0) {
+          gainParts.push(`+${res.gems_earned} 💎`);
+        }
+        if (res.gems_pending_collect > 0) {
+          gainParts.push(`${res.gems_pending_collect} 💎 ready to collect`);
+        }
+        announceGain(gainParts.join(" · "));
       } catch {
         // Non-fatal: XP recording failure should not block the session
       }
     };
 
-    void recordXP(xpEarned, scorePercentage, sessionTopic);
+    void recordXP(xpEarned, scorePercentage, "practice_sentence", sessionTopic);
 
     // Combo tracking
     const newCombo = comboStreak + 1;
     setComboStreak(newCombo);
     const bonusXP = COMBO_MILESTONES[newCombo];
     if (bonusXP !== undefined) {
-      void recordXP(bonusXP, 0);
+      void recordXP(bonusXP, 0, "combo_bonus");
     }
-  }, [result, currentProgress]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [announceGain, checkInMutation, comboStreak, currentProgress, result, sessionTopic]);
 
   useAnimatedReaction(
     () => _flipped.value,
@@ -716,6 +740,18 @@ export default function MainLearnEchoScreen() {
         </>
       )}
       {showResultSheet && result && <ResultSheet result={result} onWillDismiss={() => setShowResultSheet(false)} />}
+      <Portal hostName="root">
+        <View style={tw`absolute inset-x-4 top-16 gap-2`}>
+          {gainToasts.map((toast) => (
+            <GainToast
+              key={toast.id}
+              id={toast.id}
+              message={toast.message}
+              onDone={removeGainToast}
+            />
+          ))}
+        </View>
+      </Portal>
     </View>
   );
 }

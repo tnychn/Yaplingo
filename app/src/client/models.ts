@@ -12,6 +12,7 @@ export type Topic = "Global" | "Food" | "Culture" | "Travel" | "Business" | "Tec
 
 export type CheckInParams = {
   xp_amount: number;
+  source?: "practice_sentence" | "combo_bonus";
   topic?: Topic;
   accuracy_percentage?: number;
   completion_time_ms?: number;
@@ -29,6 +30,7 @@ export type CheckInResponse = {
   multiplier_active: boolean;
   event_name: string | null;
   gems_earned: number;
+  gems_pending_collect: number;
   newly_unlocked: string[];
 };
 

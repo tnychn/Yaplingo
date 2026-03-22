@@ -9,7 +9,7 @@ import tw from "twrnc";
 import { useAchievementsQuery, useAuthedUserQuery, useDailyProgressQuery, useGemBalanceQuery, useMyRankQuery } from "~/client";
 import { AchievementGrid, GemShop, Heatmap, Meter, Progress, Text } from "~/components";
 import { useNavigationOptions } from "~/hooks";
-import { $dailyAccuracyProgress, $dailyLessonProgress, $dailyProgress, $gemBalance } from "~/store";
+import { $dailyAccuracyProgress, $dailyLessonProgress, $dailyProgress } from "~/store";
 
 const STREAK_MILESTONE_STEP = 5;
 const formatXP = (xp: number) => xp.toLocaleString();
@@ -17,7 +17,6 @@ const formatXP = (xp: number) => xp.toLocaleString();
 const Header = ({ totalXP, isLoading }: { totalXP: number; isLoading: boolean }) => {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const gemBalance = useAtomValue($gemBalance);
 
   return (
     <View
@@ -39,14 +38,7 @@ const Header = ({ totalXP, isLoading }: { totalXP: number; isLoading: boolean })
         <View style={tw`absolute inset-x-0 items-center justify-center`}>
           <Text style={[tw`text-3xl leading-[0] text-green-500`, { fontFamily: "Feather-Bold" }]}>yaplingo</Text>
         </View>
-        <View style={tw`flex-row items-center gap-1 rounded-full bg-zinc-100 dark:bg-zinc-800 px-2 py-1`}>
-          <View style={tw`flex-row items-center gap-0.5 rounded-full bg-green-500/15 px-2 py-0.5`}>
-            <DiamondIcon size={13} color="#22C55E" fill="#22C55E" />
-            <Text style={tw`text-xs font-bold text-green-600 dark:text-green-400`}>
-              {isLoading ? "..." : gemBalance.toLocaleString()}
-            </Text>
-          </View>
-          <View style={tw`w-px h-3.5 bg-zinc-300 dark:bg-zinc-600`} />
+        <View style={tw`flex-row items-center rounded-full bg-zinc-100 dark:bg-zinc-800 px-2 py-1`}>
           <View style={tw`flex-row items-center gap-0.5 rounded-full bg-sky-500/15 px-2 py-0.5`}>
             <ZapIcon size={13} color="#0EA5E9" fill="#0EA5E9" />
             <Text style={tw`text-xs font-bold text-sky-600 dark:text-sky-400`}>

@@ -10,6 +10,7 @@ from server.core.gamification import (
     get_period_key,
     get_visible_streak_utc,
     update_streak_utc,
+    update_streak_utc_no_freeze,
 )
 from server.repository.gamification import (
     ACHIEVEMENTS,
@@ -143,6 +144,18 @@ def _topic_all_time_filter(topic: str | None):
     return or_(*[LeaderboardEntry.period_key.like(f"%::{alias}") for alias in aliases]), normalized_topic
 
 
+def _is_gems_disabled() -> bool:
+    return app_settings.disable_gems
+
+
+def _raise_gems_disabled() -> None:
+    if _is_gems_disabled():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Gems and skills are disabled for this release.",
+        )
+
+
 # ── Active Events ───────────────────────────────────────────────────────────
 
 @router.get("/active-events", response_model=list[ActiveEventResponse])
@@ -168,6 +181,7 @@ async def check_in(
 ) -> CheckInResponse:
     xp_gained_this_checkin = 0
     is_sentence_practice = request.source == "practice_sentence"
+    gems_enabled = not _is_gems_disabled()
     repository = service._repository
     async with repository.session() as session:
         async with session.begin():
@@ -252,7 +266,10 @@ async def check_in(
                 session.add(daily_accuracy)
 
             # Streak
-            new_streak = await update_streak_utc(session=session, user_id=current_user.id)
+            if gems_enabled:
+                new_streak = await update_streak_utc(session=session, user_id=current_user.id)
+            else:
+                new_streak = await update_streak_utc_no_freeze(session=session, user_id=current_user.id)
 
             # Leaderboard (global)
             leaderboard_entry = await session.get(LeaderboardEntry, (current_user.id, period_key))
@@ -326,21 +343,25 @@ async def check_in(
                     mastery_row.tier = MasteryTier.BRONZE
                 mastery_row.updated_at = datetime.utcnow()
 
-            # Gem awards
             gems_earned_this_checkin = 0
-            gem_result = await session.exec(
-                select(GemBalance).where(GemBalance.user_id == current_user.id).with_for_update()
-            )
-            gem_row = _unwrap(gem_result.one_or_none())
-            if not gem_row:
-                gem_row = GemBalance(user_id=current_user.id, balance=0)
-                session.add(gem_row)
+            gems_pending_collect = 0
+            newly_unlocked: list[str] = []
 
             def award_gems(amount: int, reason: str):
                 nonlocal gems_earned_this_checkin
-                gem_row.balance += amount
-                gems_earned_this_checkin += amount
-                session.add(GemTransaction(user_id=current_user.id, amount=amount, reason=reason))
+                if gems_enabled:
+                    gem_row.balance += amount
+                    gems_earned_this_checkin += amount
+                    session.add(GemTransaction(user_id=current_user.id, amount=amount, reason=reason))
+
+            if gems_enabled:
+                gem_result = await session.exec(
+                    select(GemBalance).where(GemBalance.user_id == current_user.id).with_for_update()
+                )
+                gem_row = _unwrap(gem_result.one_or_none())
+                if not gem_row:
+                    gem_row = GemBalance(user_id=current_user.id, balance=0)
+                    session.add(gem_row)
 
             was_goal_met_before = (daily_progress.xp_earned - effective_xp) >= DAILY_GOAL_XP
             if daily_progress.goal_met and not was_goal_met_before:
@@ -370,54 +391,60 @@ async def check_in(
 
             daily_progress.goal_met = daily_progress.xp_earned >= DAILY_GOAL_XP
 
-            if normalized_topic and normalized_topic != "Global" and mastery_row and old_mastery_tier is not None:
+            if (
+                gems_enabled
+                and normalized_topic
+                and normalized_topic != "Global"
+                and mastery_row
+                and old_mastery_tier is not None
+            ):
                 if mastery_row.tier != old_mastery_tier:
                     award_gems(GEM_EARN_RATES["mastery_tier_upgrade"], "mastery_tier_upgrade")
 
-            # Achievement evaluation
-            existing_result = await session.exec(
-                select(UserAchievement.achievement_key).where(UserAchievement.user_id == current_user.id)
-            )
-            existing_keys = {_unwrap(r) for r in existing_result.all()}
-
-            lifetime_xp_r = await session.exec(
-                select(func.coalesce(func.sum(DailyProgress.xp_earned), 0)).where(
-                    DailyProgress.user_id == current_user.id
+            if gems_enabled:
+                # Achievement evaluation
+                existing_result = await session.exec(
+                    select(UserAchievement.achievement_key).where(UserAchievement.user_id == current_user.id)
                 )
-            )
-            lifetime_xp = int(_unwrap(lifetime_xp_r.one()))
+                existing_keys = {_unwrap(r) for r in existing_result.all()}
 
-            lifetime_lessons_r = await session.exec(
-                select(func.coalesce(func.sum(DailyProgress.lessons_completed), 0)).where(
-                    DailyProgress.user_id == current_user.id
-                )
-            )
-            lifetime_lessons = int(_unwrap(lifetime_lessons_r.one()))
-
-            newly_unlocked: list[str] = []
-            for ach_key, cfg in ACHIEVEMENTS.items():
-                if ach_key in existing_keys:
-                    continue
-                unlocked = False
-                if cfg["threshold_type"] == "lifetime_xp":
-                    unlocked = lifetime_xp >= cfg["threshold"]
-                elif cfg["threshold_type"] == "streak":
-                    unlocked = new_streak >= cfg["threshold"]
-                elif cfg["threshold_type"] == "lifetime_lessons":
-                    unlocked = lifetime_lessons >= cfg["threshold"]
-                elif cfg["threshold_type"] == "mastery_tier" and normalized_topic:
-                    unlocked = (
-                        mastery_row is not None
-                        and mastery_row.tier.value == cfg["threshold"]
-                        and normalized_topic == cfg.get("topic")
+                lifetime_xp_r = await session.exec(
+                    select(func.coalesce(func.sum(DailyProgress.xp_earned), 0)).where(
+                        DailyProgress.user_id == current_user.id
                     )
-                if unlocked:
-                    newly_unlocked.append(ach_key)
+                )
+                lifetime_xp = int(_unwrap(lifetime_xp_r.one()))
 
-            gems_pending_collect = sum(
-                ACHIEVEMENTS[ach_key].get("gem_reward", 15)
-                for ach_key in newly_unlocked
-            )
+                lifetime_lessons_r = await session.exec(
+                    select(func.coalesce(func.sum(DailyProgress.lessons_completed), 0)).where(
+                        DailyProgress.user_id == current_user.id
+                    )
+                )
+                lifetime_lessons = int(_unwrap(lifetime_lessons_r.one()))
+
+                for ach_key, cfg in ACHIEVEMENTS.items():
+                    if ach_key in existing_keys:
+                        continue
+                    unlocked = False
+                    if cfg["threshold_type"] == "lifetime_xp":
+                        unlocked = lifetime_xp >= cfg["threshold"]
+                    elif cfg["threshold_type"] == "streak":
+                        unlocked = new_streak >= cfg["threshold"]
+                    elif cfg["threshold_type"] == "lifetime_lessons":
+                        unlocked = lifetime_lessons >= cfg["threshold"]
+                    elif cfg["threshold_type"] == "mastery_tier" and normalized_topic:
+                        unlocked = (
+                            mastery_row is not None
+                            and mastery_row.tier.value == cfg["threshold"]
+                            and normalized_topic == cfg.get("topic")
+                        )
+                    if unlocked:
+                        newly_unlocked.append(ach_key)
+
+                gems_pending_collect = sum(
+                    ACHIEVEMENTS[ach_key].get("gem_reward", 15)
+                    for ach_key in newly_unlocked
+                )
 
             await session.flush()
             await session.refresh(daily_progress)
@@ -659,11 +686,13 @@ async def get_my_rank(
 
 @router.get("/gems/config", response_model=GemConfigResponse)
 async def get_gem_config() -> GemConfigResponse:
+    _raise_gems_disabled()
     return GemConfigResponse(earn_rates=GEM_EARN_RATES, spend_rates=GEM_SPEND_RATES)
 
 
 @router.get("/gems", response_model=GemBalanceResponse)
 async def get_gems(session: SessionDep, current_user: AuthUser) -> GemBalanceResponse:
+    _raise_gems_disabled()
     balance = await session.get(GemBalance, current_user.id)
     result = await session.exec(
         select(GemTransaction)
@@ -684,6 +713,7 @@ async def spend_gems(
     current_user: AuthUser,
     service: Service,
 ) -> SpendGemsResponse:
+    _raise_gems_disabled()
     cost = GEM_SPEND_RATES.get(request.item_key)
     if cost is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown item")
@@ -827,6 +857,7 @@ async def get_achievements(session: SessionDep, current_user: AuthUser) -> list[
     mastery_map = {_unwrap(m).topic: _unwrap(m) for m in mastery_result.all()}
 
     responses: list[AchievementResponse] = []
+    gems_disabled = _is_gems_disabled()
     for key, cfg in ACHIEVEMENTS.items():
         is_unlocked = key in unlocked_map
         progress = 1.0 if is_unlocked else 0.0
@@ -845,7 +876,7 @@ async def get_achievements(session: SessionDep, current_user: AuthUser) -> list[
         responses.append(AchievementResponse(
             key=key, title=cfg["title"], desc=cfg["desc"],
             unlocked=is_unlocked, unlocked_at=unlocked_map.get(key),
-            progress=round(progress, 2), gem_reward=cfg.get("gem_reward", 15),
+            progress=round(progress, 2), gem_reward=0 if gems_disabled else cfg.get("gem_reward", 15),
             ultimate=cfg.get("ultimate", False),
         ))
     return responses
@@ -857,6 +888,7 @@ async def claim_achievement(
     current_user: AuthUser,
     service: Service,
 ) -> ClaimAchievementResponse:
+    _raise_gems_disabled()
     cfg = ACHIEVEMENTS.get(request.achievement_key)
     if cfg is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown achievement")
@@ -946,6 +978,7 @@ async def claim_achievement(
 
 @router.get("/inventory", response_model=UserInventoryResponse)
 async def get_inventory(session: SessionDep, current_user: AuthUser) -> UserInventoryResponse:
+    _raise_gems_disabled()
     row = _unwrap(
         (await session.exec(select(UserInventory).where(UserInventory.user_id == current_user.id))).one_or_none()
     )
@@ -956,6 +989,7 @@ async def get_inventory(session: SessionDep, current_user: AuthUser) -> UserInve
 
 @router.post("/inventory/use", response_model=UseSkillResponse)
 async def use_skill(item_key: str, session: SessionDep, current_user: AuthUser) -> UseSkillResponse:
+    _raise_gems_disabled()
     USABLE_SKILLS = {"streak_freeze"}
     if item_key not in USABLE_SKILLS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Item '{item_key}' cannot be manually activated")

@@ -419,21 +419,14 @@ export default function MainLearnEchoScreen() {
         ? Math.max(0, Math.round(completionMsRaw))
         : undefined;
       try {
-        const res = await checkInMutation.mutateAsync({
+        await checkInMutation.mutateAsync({
           xp_amount: safeXP,
           source,
           topic: normalizeTopic(topic),
           accuracy_percentage: safeAccuracy,
           completion_time_ms: safeCompletionMs,
         });
-        const gainParts = [`+${safeXP} XP`];
-        if (res.gems_earned > 0) {
-          gainParts.push(`+${res.gems_earned} 💎`);
-        }
-        if (res.gems_pending_collect > 0) {
-          gainParts.push(`${res.gems_pending_collect} 💎 ready to collect`);
-        }
-        announceGain(gainParts.join(" · "));
+        announceGain(`+${safeXP} XP`);
       } catch {
         // Non-fatal: XP recording failure should not block the session
       }

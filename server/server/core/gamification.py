@@ -84,3 +84,38 @@ async def update_streak_utc(session: AsyncSession, user_id: ULID) -> int:
 
     session.add(user_gamification)
     return user_gamification.current_streak
+
+
+async def update_streak_utc_no_freeze(session: AsyncSession, user_id: ULID) -> int:
+    today_utc: date = datetime.now(timezone.utc).date()
+
+    query = select(UserGamification).where(UserGamification.user_id == user_id)
+    result = await session.exec(query)
+    user_gamification = result.one_or_none()
+
+    if user_gamification is None:
+        user_gamification = UserGamification(
+            user_id=user_id,
+            current_streak=1,
+            last_activity_date=today_utc.strftime("%Y-%m-%d"),
+        )
+        session.add(user_gamification)
+        return 1
+
+    last_activity_date: Optional[date] = None
+    if user_gamification.last_activity_date:
+        last_activity_date = datetime.strptime(
+            user_gamification.last_activity_date, "%Y-%m-%d"
+        ).date()
+
+    if last_activity_date == today_utc:
+        pass
+    elif last_activity_date == today_utc - timedelta(days=1):
+        user_gamification.current_streak += 1
+        user_gamification.last_activity_date = today_utc.strftime("%Y-%m-%d")
+    else:
+        user_gamification.current_streak = 1
+        user_gamification.last_activity_date = today_utc.strftime("%Y-%m-%d")
+
+    session.add(user_gamification)
+    return user_gamification.current_streak

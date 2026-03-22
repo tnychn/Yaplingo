@@ -1,13 +1,12 @@
-import { useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@react-navigation/native";
 import { useAtomValue } from "jotai";
-import { CalendarIcon, DiamondIcon, FlameIcon, ZapIcon } from "lucide-react-native";
+import { CalendarIcon, FlameIcon, ZapIcon } from "lucide-react-native";
 import tw from "twrnc";
 
-import { useAchievementsQuery, useAuthedUserQuery, useDailyProgressQuery, useGemBalanceQuery, useMyRankQuery } from "~/client";
-import { AchievementGrid, GemShop, Heatmap, Meter, Progress, Text } from "~/components";
+import { useAchievementsQuery, useAuthedUserQuery, useDailyProgressQuery, useMyRankQuery } from "~/client";
+import { AchievementGrid, Heatmap, Meter, Progress, Text } from "~/components";
 import { useNavigationOptions } from "~/hooks";
 import { $dailyAccuracyProgress, $dailyLessonProgress, $dailyProgress } from "~/store";
 
@@ -139,34 +138,12 @@ const DailyGoalsCard = () => {
   );
 };
 
-const GemShopCard = ({ onPress }: { onPress: () => void }) => (
-  <Pressable
-    onPress={onPress}
-    style={tw`flex-row items-center justify-between rounded-2xl border-2 border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/30 p-4`}
-  >
-    <View style={tw`flex-row items-center gap-3`}>
-      <View style={tw`w-10 h-10 rounded-xl bg-green-500/15 items-center justify-center`}>
-        <DiamondIcon size={22} color="#22C55E" fill="#22C55E" />
-      </View>
-      <View>
-        <Text style={tw`text-lg font-bold text-zinc-800 dark:text-zinc-100`}>Gem Shop</Text>
-        <Text style={tw`text-xs text-zinc-500`}>Spend gems on boosts & rewards</Text>
-      </View>
-    </View>
-    <View style={tw`rounded-xl bg-green-500 px-4 py-2`}>
-      <Text style={tw`text-sm font-bold text-white`}>Open</Text>
-    </View>
-  </Pressable>
-);
-
 export default function MainHomeScreen() {
   useDailyProgressQuery();
-  useGemBalanceQuery();
   const { data: myRankData, isLoading: rankLoading } = useMyRankQuery();
   const { data: achievements } = useAchievementsQuery();
   const streak = myRankData?.current_streak ?? 0;
   const totalXP = myRankData?.total_xp ?? 0;
-  const [shopVisible, setShopVisible] = useState(false);
 
   useNavigationOptions({ header: () => <Header totalXP={totalXP} isLoading={rankLoading} /> });
   return (
@@ -175,11 +152,9 @@ export default function MainHomeScreen() {
       <WelcomeMessage />
       <ActivityCard />
       <DailyGoalsCard />
-      <GemShopCard onPress={() => setShopVisible(true)} />
       {achievements && achievements.length > 0 && (
         <AchievementGrid achievements={achievements} />
       )}
-      <GemShop visible={shopVisible} onClose={() => setShopVisible(false)} />
     </ScrollView>
   );
 }

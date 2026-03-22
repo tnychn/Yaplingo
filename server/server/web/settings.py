@@ -3,6 +3,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     secret: str
+    disable_gems: bool = False
 
     # Mastery score formula weights (must sum to 1.0)
     MASTERY_WEIGHT_XP: float = 0.5

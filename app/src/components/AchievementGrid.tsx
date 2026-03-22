@@ -1,6 +1,5 @@
 import React, { useCallback, useState } from "react";
 import {
-  Alert,
   FlatList,
   Image,
   Modal,
@@ -11,21 +10,12 @@ import {
 import Animated, {
   FadeIn,
   ZoomIn,
-  useAnimatedStyle,
-  useSharedValue,
-  withDelay,
-  withSequence,
-  withSpring,
-  withTiming,
-  runOnJS,
 } from "react-native-reanimated";
 import {
   AwardIcon,
-  DiamondIcon,
 } from "lucide-react-native";
 import tw from "twrnc";
 
-import { useClaimAchievementMutation } from "~/client";
 import type { AchievementResponse } from "~/client/models";
 
 import Text from "./Text";
@@ -87,61 +77,6 @@ const AchievementImageIcon = ({
 };
 
 
-const FlyingGem = ({
-  index,
-  onComplete,
-}: {
-  index: number;
-  onComplete: () => void;
-}) => {
-  const translateY = useSharedValue(0);
-  const translateX = useSharedValue(0);
-  const opacity = useSharedValue(1);
-  const scale = useSharedValue(0.3);
-
-  const startX = (Math.random() - 0.5) * 60;
-
-  React.useEffect(() => {
-    translateX.value = withSequence(
-      withTiming(startX, { duration: 100 }),
-      withTiming(0, { duration: 600 }),
-    );
-    translateY.value = withDelay(
-      index * 80,
-      withTiming(-280, { duration: 800 }),
-    );
-    scale.value = withDelay(
-      index * 80,
-      withSequence(
-        withSpring(1.2, { damping: 4 }),
-        withTiming(0.5, { duration: 400 }),
-      ),
-    );
-    opacity.value = withDelay(
-      index * 80 + 500,
-      withTiming(0, { duration: 300 }, () => {
-        if (index === 0) runOnJS(onComplete)();
-      }),
-    );
-  }, [index, onComplete, opacity, scale, startX, translateX, translateY]);
-
-  const style = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: translateX.value },
-      { translateY: translateY.value },
-      { scale: scale.value },
-    ],
-    opacity: opacity.value,
-  }));
-
-  return (
-    <Animated.View style={[{ position: "absolute" }, style]}>
-      <DiamondIcon size={20} color="#22C55E" fill="#22C55E" />
-    </Animated.View>
-  );
-};
-
-
 const AchievementBadge = ({
   item,
   index,
@@ -157,9 +92,9 @@ const AchievementBadge = ({
     : FadeIn.delay(index * 25).duration(200);
 
   const progressPct = Math.round(item.progress * 100);
-  const isClaimable = !item.unlocked && progressPct >= 100;
+  const isComplete = !item.unlocked && progressPct >= 100;
   const isUltimate = item.ultimate;
-  const isLocked = !item.unlocked && !isClaimable;
+  const isLocked = !item.unlocked && !isComplete;
 
   return (
     <Animated.View entering={entering} style={tw`flex-1 items-center py-2.5 px-1`}>
@@ -173,12 +108,12 @@ const AchievementBadge = ({
               borderWidth: isUltimate ? 3.5 : item.unlocked ? 3 : 2,
               borderColor: item.unlocked
                 ? cfg?.color ?? "#9CA3AF"
-                : isClaimable
+                : isComplete
                   ? "#22C55E"
                   : "#D1D5DB",
               backgroundColor: item.unlocked
                 ? `${cfg?.color ?? "#9CA3AF"}15`
-                : isClaimable
+                : isComplete
                   ? "#22C55E10"
                   : "#F9FAFB",
               alignItems: "center",
@@ -191,14 +126,14 @@ const AchievementBadge = ({
               shadowRadius: isUltimate ? 16 : 10,
               elevation: isUltimate ? 12 : 8,
             },
-            isClaimable && {
+            isComplete && {
               shadowColor: "#22C55E",
               shadowOffset: { width: 0, height: 2 },
               shadowOpacity: 0.35,
               shadowRadius: 8,
               elevation: 6,
             },
-            isUltimate && !item.unlocked && !isClaimable && {
+            isUltimate && !item.unlocked && !isComplete && {
               borderColor: "#FFD70060",
               borderWidth: 2.5,
             },
@@ -211,13 +146,13 @@ const AchievementBadge = ({
         <Text
           style={tw.style(
             "text-[11px] font-bold text-center mt-1.5",
-            item.unlocked
-              ? "text-zinc-800 dark:text-zinc-100"
-              : isClaimable
-                ? "text-green-600"
-                : "text-zinc-400",
-          )}
-          numberOfLines={1}
+                item.unlocked
+                  ? "text-zinc-800 dark:text-zinc-100"
+                  : isComplete
+                    ? "text-green-600"
+                    : "text-zinc-400",
+            )}
+            numberOfLines={1}
         >
           {item.title}
         </Text>
@@ -232,7 +167,7 @@ const AchievementBadge = ({
                 tw`h-full rounded-full`,
                 {
                   width: `${progressPct}%`,
-                  backgroundColor: isClaimable ? "#22C55E" : progressPct > 0 ? (cfg?.color ?? "#9CA3AF") : "transparent",
+                  backgroundColor: isComplete ? "#22C55E" : progressPct > 0 ? (cfg?.color ?? "#9CA3AF") : "transparent",
                 },
               ]}
             />
@@ -251,9 +186,9 @@ const AchievementBadge = ({
               ✓ Earned
             </Text>
           </View>
-        ) : isClaimable ? (
+        ) : isComplete ? (
           <View style={tw`mt-1 rounded-full bg-green-500 px-2 py-0.5`}>
-            <Text style={tw`text-[9px] font-bold text-white`}>Collect!</Text>
+            <Text style={tw`text-[9px] font-bold text-white`}>Completed</Text>
           </View>
         ) : progressPct > 0 ? (
           <Text style={tw`text-[9px] font-medium text-zinc-400 mt-1`}>
@@ -273,35 +208,25 @@ const AchievementBadge = ({
 const DetailModal = ({
   item,
   onClose,
-  onClaim,
-  isClaiming,
 }: {
   item: AchievementResponse | null;
   onClose: () => void;
-  onClaim: (key: string) => void;
-  isClaiming: boolean;
 }) => {
-  const [showGems, setShowGems] = useState(false);
   if (!item) return null;
   const cfg = BADGE_CONFIG[item.key];
   const progressPct = Math.round(item.progress * 100);
-  const isClaimable = !item.unlocked && progressPct >= 100;
-  const isLocked = !item.unlocked && !isClaimable;
+  const isComplete = !item.unlocked && progressPct >= 100;
+  const isLocked = !item.unlocked && !isComplete;
 
   const getProgressMessage = () => {
     if (item.unlocked) {
       return `Earned ${new Date(item.unlocked_at!).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
     }
-    if (isClaimable) return "🎉 Achievement complete! Collect your reward!";
+    if (isComplete) return "🎉 Achievement complete!";
     if (progressPct >= 75) return "Almost there — just a little more!";
     if (progressPct >= 50) return "Halfway through — keep pushing!";
     if (progressPct > 0) return "Great start — keep it up!";
     return "Start practicing to make progress.";
-  };
-
-  const handleClaim = () => {
-    setShowGems(true);
-    onClaim(item.key);
   };
 
   return (
@@ -322,17 +247,17 @@ const DetailModal = ({
                 height: 96,
                 borderRadius: 48,
                 borderWidth: 3,
-                borderColor: item.unlocked ? (cfg?.color ?? "#9CA3AF") : isClaimable ? "#22C55E" : "#D1D5DB",
+                borderColor: item.unlocked ? (cfg?.color ?? "#9CA3AF") : isComplete ? "#22C55E" : "#D1D5DB",
                 backgroundColor: item.unlocked
                   ? `${cfg?.color ?? "#9CA3AF"}15`
-                  : isClaimable
+                  : isComplete
                     ? "#22C55E10"
                     : "#F3F4F6",
                 alignItems: "center",
                 justifyContent: "center",
                 marginBottom: 16,
               },
-              (item.unlocked || isClaimable) && {
+              (item.unlocked || isComplete) && {
                 shadowColor: item.unlocked ? (cfg?.color ?? "#9CA3AF") : "#22C55E",
                 shadowOffset: { width: 0, height: 4 },
                 shadowOpacity: 0.4,
@@ -342,15 +267,6 @@ const DetailModal = ({
           >
             <AchievementImageIcon config={cfg} size={MODAL_ICON_SIZE} dimmed={isLocked} />
           </View>
-
-          {/* Flying gems overlay */}
-          {showGems && (
-            <View style={{ position: "absolute", top: 60, alignSelf: "center" }}>
-              {[0, 1, 2, 3, 4].map((i) => (
-                <FlyingGem key={i} index={i} onComplete={() => setShowGems(false)} />
-              ))}
-            </View>
-          )}
 
           <Text style={tw`text-xl font-bold text-center text-zinc-800 dark:text-zinc-100`}>
             {item.title}
@@ -363,14 +279,14 @@ const DetailModal = ({
           <View style={tw`w-full mt-4`}>
             <View style={tw`flex-row justify-between mb-1.5`}>
               <Text style={tw`text-xs font-medium text-zinc-400`}>Progress</Text>
-              <Text
-                style={[
-                  tw`text-xs font-bold`,
-                  { color: item.unlocked || isClaimable ? "#22C55E" : (cfg?.color ?? "#9CA3AF") },
-                ]}
-              >
-                {progressPct}%
-              </Text>
+                <Text
+                  style={[
+                    tw`text-xs font-bold`,
+                    { color: item.unlocked || isComplete ? "#22C55E" : (cfg?.color ?? "#9CA3AF") },
+                  ]}
+                >
+                  {progressPct}%
+                </Text>
             </View>
             <View style={tw`h-2.5 rounded-full overflow-hidden bg-zinc-100 dark:bg-zinc-800`}>
               <View
@@ -388,42 +304,19 @@ const DetailModal = ({
           <Text
             style={tw.style(
               "text-xs text-center mt-3 font-medium",
-              item.unlocked ? "text-zinc-500" : isClaimable ? "text-green-600" : "text-zinc-400",
+              item.unlocked ? "text-zinc-500" : isComplete ? "text-green-600" : "text-zinc-400",
             )}
           >
             {getProgressMessage()}
           </Text>
 
-          {/* Reward */}
-          <View style={tw`flex-row items-center gap-1 mt-2`}>
-            <Text style={tw`text-xs text-zinc-400`}>Reward:</Text>
-            <DiamondIcon size={12} color="#22C55E" fill="#22C55E" />
-            <Text style={tw`text-xs font-bold text-green-600`}>{item.gem_reward} gems</Text>
-          </View>
-
           {/* Action buttons */}
-          {isClaimable ? (
-            <Button
-              onPress={handleClaim}
-              disabled={isClaiming}
-              style={tw`mt-4 px-8 bg-green-500 border-transparent`}
-              shadowColor={tw.color("green-400")}
-            >
-              <View style={tw`flex-row items-center gap-1.5`}>
-                <DiamondIcon size={16} color="white" fill="white" />
-                <Text style={tw`text-sm font-bold text-white`}>
-                  {isClaiming ? "Claiming..." : `Collect ${item.gem_reward} 💎`}
-                </Text>
-              </View>
-            </Button>
-          ) : (
-            <Button
-              onPress={onClose}
-              style={tw`mt-4 px-8 bg-zinc-100 dark:bg-zinc-800 border-transparent`}
-            >
-              <Text style={tw`text-sm font-bold text-zinc-600 dark:text-zinc-300`}>Close</Text>
-            </Button>
-          )}
+          <Button
+            onPress={onClose}
+            style={tw`mt-4 px-8 bg-zinc-100 dark:bg-zinc-800 border-transparent`}
+          >
+            <Text style={tw`text-sm font-bold text-zinc-600 dark:text-zinc-300`}>Close</Text>
+          </Button>
         </Pressable>
       </Pressable>
     </Modal>
@@ -437,25 +330,6 @@ export default function AchievementGrid({
   achievements: AchievementResponse[];
 }) {
   const [selected, setSelected] = useState<AchievementResponse | null>(null);
-  const claimMutation = useClaimAchievementMutation();
-
-  const handleClaim = useCallback(
-    (key: string) => {
-      claimMutation.mutate(
-        { achievement_key: key },
-        {
-          onSuccess: (data) => {
-            Alert.alert("Collected", `+${data.gems_awarded} gems added to your balance.`);
-            setTimeout(() => setSelected(null), 1200);
-          },
-          onError: () => {
-            Alert.alert("Error", "Could not claim achievement. Please try again.");
-          },
-        },
-      );
-    },
-    [claimMutation],
-  );
 
   const renderItem = useCallback(
     ({ item, index }: { item: AchievementResponse; index: number }) => (
@@ -465,7 +339,7 @@ export default function AchievementGrid({
   );
 
   const unlocked = achievements.filter((a) => a.unlocked).length;
-  const claimable = achievements.filter((a) => !a.unlocked && a.progress >= 1.0).length;
+  const completed = achievements.filter((a) => !a.unlocked && a.progress >= 1.0).length;
 
   return (
     <>
@@ -474,10 +348,10 @@ export default function AchievementGrid({
           🏅 Achievements
         </Text>
         <View style={tw`flex-row items-center gap-2`}>
-          {claimable > 0 && (
+          {completed > 0 && (
             <View style={tw`rounded-full bg-green-500 px-2 py-0.5`}>
               <Text style={tw`text-[10px] font-bold text-white`}>
-                {claimable} to collect
+                {completed} completed
               </Text>
             </View>
           )}
@@ -501,8 +375,6 @@ export default function AchievementGrid({
       <DetailModal
         item={selected}
         onClose={() => setSelected(null)}
-        onClaim={handleClaim}
-        isClaiming={claimMutation.isPending}
       />
     </>
   );

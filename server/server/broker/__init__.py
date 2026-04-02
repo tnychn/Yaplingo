@@ -1,3 +1,4 @@
+from asyncio import Lock
 from datetime import timedelta
 from typing import ParamSpec, TypeVar
 
@@ -12,6 +13,10 @@ from .settings import settings
 
 P = ParamSpec("P")
 T = TypeVar("T")
+
+# Track in-progress tasks to avoid duplicate execution
+_in_progress_tasks: dict[str, AsyncTaskiqTask] = {}
+_task_lock = Lock()
 
 
 class Broker:
@@ -90,15 +95,33 @@ class Broker:
         *args: P.args,
         **kwargs: P.kwargs,
     ) -> T:
-        if task_id is not None and await self.broker.result_backend.is_result_ready(str(task_id)):
+        task_id_str = str(task_id) if task_id is not None else None
+
+        # Check if result is already ready
+        if task_id_str is not None and await self.broker.result_backend.is_result_ready(task_id_str):
             task = AsyncTaskiqTask(
-                task_id=str(task_id),
+                task_id=task_id_str,
                 result_backend=self.broker.result_backend,
                 return_type=task_func.return_type,  # type: ignore
             )
-        else:
-            task = await self._delegate(task_func, task_id, *args, **kwargs)
-        return await self._recall(task)  # type: ignore
+            return await self._recall(task)  # type: ignore
+
+        # Check if task is already in progress (avoid duplicate execution)
+        async with _task_lock:
+            if task_id_str is not None and task_id_str in _in_progress_tasks:
+                task = _in_progress_tasks[task_id_str]
+            else:
+                task = await self._delegate(task_func, task_id, *args, **kwargs)
+                if task_id_str is not None:
+                    _in_progress_tasks[task_id_str] = task
+
+        try:
+            return await self._recall(task)  # type: ignore
+        finally:
+            # Clean up in-progress tracking
+            if task_id_str is not None:
+                async with _task_lock:
+                    _in_progress_tasks.pop(task_id_str, None)
 
 
 broker = Broker.broker

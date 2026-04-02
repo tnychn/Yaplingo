@@ -60,6 +60,7 @@ server_logger = logging.getLogger("uvicorn.error")
 
 DAILY_GOAL_XP = 300
 HIGH_ACCURACY_THRESHOLD = 80
+GEM_SHOP_XP_BOOST_EVENT_NAMES = {"Personal XP Boost", "Mega XP Boost"}
 TOPIC_ALIASES: dict[str, str] = {
     "global": "Global",
     "food": "Food",
@@ -153,6 +154,7 @@ async def get_active_events(session: SessionDep) -> list[ActiveEventResponse]:
             XPMultiplierEvent.is_active == True,  # noqa: E712
             XPMultiplierEvent.starts_at <= now,
             XPMultiplierEvent.ends_at >= now,
+            XPMultiplierEvent.name.in_(GEM_SHOP_XP_BOOST_EVENT_NAMES),
         )
     )
     return [_unwrap(r) for r in result.all()]
@@ -178,6 +180,7 @@ async def check_in(
                     XPMultiplierEvent.is_active == True,  # noqa: E712
                     XPMultiplierEvent.starts_at <= now_utc,
                     XPMultiplierEvent.ends_at >= now_utc,
+                    XPMultiplierEvent.name.in_(GEM_SHOP_XP_BOOST_EVENT_NAMES),
                 )
             )
             event_rows = [_unwrap(row) for row in event_result.all()]
@@ -207,7 +210,7 @@ async def check_in(
                 select(DailyProgress).where(
                     DailyProgress.user_id == current_user.id,
                     DailyProgress.date_key == today_str,
-                )
+                ).with_for_update()
             )
             daily_progress = _unwrap(dp_result.one_or_none())
 

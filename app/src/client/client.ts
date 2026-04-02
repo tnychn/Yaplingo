@@ -19,8 +19,14 @@ client.interceptors.request.use((config) => {
 // log error responses globally
 client.interceptors.response.use(undefined, (error) => {
   if (error instanceof AxiosError) {
-    if (error.status === 401) store.set($token, ""); // clear token on unauthorized
-    if (__DEV__) console.warn(`[API] ${error.config?.method?.toUpperCase()} ${error.config?.url} → ${error.status}`);
+    // Only clear token for auth-related 401s (login, register, validate)
+    // Don't clear for in-session 401s (like check-in) to avoid kicking user out mid-session
+    const authEndpoints = ["/auth/login", "/auth/register", "/auth/validate", "/auth/user"];
+    const url = error.config?.url || "";
+    if (error.status === 401 && authEndpoints.some((ep) => url.includes(ep))) {
+      store.set($token, "");
+    }
+    if (__DEV__) console.warn(`[API] ${error.config?.method?.toUpperCase()} ${url} → ${error.status}`);
   }
   return Promise.reject(error);
 });

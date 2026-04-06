@@ -6,7 +6,7 @@ from fastapi.responses import PlainTextResponse
 from starlette.exceptions import HTTPException
 
 from server.service import Service
-from server.web.routers import auth, chat, echo, game, user
+from server.web.routers import auth, chat, echo, game, gamification, user
 
 
 @asynccontextmanager
@@ -34,3 +34,4 @@ app.include_router(user.router, prefix="/user")
 app.include_router(echo.router, prefix="/echo")
 app.include_router(chat.router, prefix="/chat")
 app.include_router(game.router, prefix="/game")
+app.include_router(gamification.router, prefix="/gamification")

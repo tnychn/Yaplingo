@@ -89,4 +89,5 @@ export const useLeaderboardQuery = (period: LeaderboardPeriod = "all-time") =>
     },
   });
 
+export * from "./gamification";
 export * from "./models";

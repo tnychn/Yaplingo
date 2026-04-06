@@ -18,6 +18,11 @@ const TABS: Record<string, Tab> = {
     title: "LEARN",
     icon: require("@/icons/tabs/learn.png"),
   },
+  progress: {
+    header: false,
+    title: "PROGRESS",
+    icon: require("@/icons/tabs/progress.png"),
+  },
   leaderboard: {
     header: false,
     title: "LEADERBOARD",

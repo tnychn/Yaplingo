@@ -5,7 +5,7 @@ import { useTheme } from "@react-navigation/native";
 import { CalendarIcon, ZapIcon } from "lucide-react-native";
 import tw from "twrnc";
 
-import { useAchievementsQuery, useClaimAchievementMutation, useCurrentUserQuery, type User } from "~/client";
+import { useAchievementsQuery, useClaimAchievementMutation, useCurrentUserQuery, useGemBalanceQuery, type User } from "~/client";
 import { AchievementGrid } from "~/components";
 import { Spinner, Text } from "~/components/primitives";
 import { useNavigationOptions, useTomorrowCountdown } from "~/hooks";
@@ -93,6 +93,7 @@ const MilestoneCard = ({ user }: { user: User }) => {
 export default function MainHomeScreen() {
   const { data: user } = useCurrentUserQuery();
   const { data: achievements = [] } = useAchievementsQuery();
+  const { data: gemBalance } = useGemBalanceQuery();
   const claimAchievement = useClaimAchievementMutation();
 
   const handleClaim = useCallback(
@@ -100,7 +101,7 @@ export default function MainHomeScreen() {
       claimAchievement.mutate(
         { achievement_key: achievementKey },
         {
-          onSuccess: () => Alert.alert("Achievement claimed", "Nice work!"),
+          onSuccess: (data) => Alert.alert("Collected", `+${data.gems_awarded} gems added.`),
           onError: () => Alert.alert("Unable to claim", "This achievement is not claimable yet."),
         },
       );
@@ -127,7 +128,12 @@ export default function MainHomeScreen() {
       </View>
       <ActivityCard user={user} />
       {achievements.length > 0 && (
-        <AchievementGrid achievements={achievements} onClaim={handleClaim} claimingKey={claimingKey} />
+        <AchievementGrid
+          achievements={achievements}
+          gemBalance={gemBalance?.balance ?? 0}
+          onClaim={handleClaim}
+          claimingKey={claimingKey}
+        />
       )}
     </ScrollView>
   );

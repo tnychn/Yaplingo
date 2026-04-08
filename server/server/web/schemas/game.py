@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 
-from server.service.game import AchievementStatus, AchievementUnlock, LeaderboardEntry
+from server.service.game import AchievementClaim, AchievementStatus, LeaderboardEntry
 
 
 class LeaderboardResponse(BaseModel):
@@ -15,7 +15,17 @@ class AchievementClaimInput(BaseModel):
     achievement_key: str
 
 
-class AchievementClaimResponse(AchievementUnlock): ...
+class AchievementClaimResponse(AchievementClaim): ...
 
 
-__all__ = ["LeaderboardResponse", "AchievementResponse", "AchievementClaimInput", "AchievementClaimResponse"]
+class GemBalanceResponse(BaseModel):
+    balance: int
+
+
+__all__ = [
+    "LeaderboardResponse",
+    "AchievementResponse",
+    "AchievementClaimInput",
+    "AchievementClaimResponse",
+    "GemBalanceResponse",
+]

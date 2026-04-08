@@ -6,7 +6,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from ulid import ULID
 
-from .entities import UserAchievement
+from .entities import UserAchievement, UserGemBalance
 
 
 class AchievementRepository:
@@ -19,28 +19,48 @@ class AchievementRepository:
             rows = (await session.exec(query)).all()
             return {row.achievement_key: row.unlocked_at for row in rows}
 
-    async def unlock(self, user_id: ULID, achievement_key: str) -> datetime | None:
+    async def get_gem_balance(self, user_id: ULID) -> int:
         async with self._session() as session:
-            query = select(UserAchievement).where(
-                UserAchievement.user_id == user_id,
-                UserAchievement.achievement_key == achievement_key,
-            )
-            existing = (await session.exec(query)).one_or_none()
-            if existing is not None:
-                return None
+            query = select(UserGemBalance).where(UserGemBalance.user_id == user_id)
+            row = (await session.exec(query)).one_or_none()
+            return row.balance if row is not None else 0
 
-            achievement = UserAchievement(
-                user_id=user_id,
-                achievement_key=achievement_key,
-            )
-            session.add(achievement)
+    async def claim_and_award(
+        self,
+        user_id: ULID,
+        achievement_key: str,
+        gem_reward: int,
+    ) -> tuple[datetime, int] | None:
+        async with self._session() as session:
             try:
-                await session.commit()
+                async with session.begin():
+                    existing = (await session.exec(
+                        select(UserAchievement).where(
+                            UserAchievement.user_id == user_id,
+                            UserAchievement.achievement_key == achievement_key,
+                        )
+                    )).one_or_none()
+                    if existing is not None:
+                        return None
+
+                    achievement = UserAchievement(user_id=user_id, achievement_key=achievement_key)
+                    session.add(achievement)
+
+                    gem_row = (await session.exec(
+                        select(UserGemBalance)
+                        .where(UserGemBalance.user_id == user_id)
+                        .with_for_update()
+                    )).one_or_none()
+                    if gem_row is None:
+                        gem_row = UserGemBalance(user_id=user_id, balance=0)
+                        session.add(gem_row)
+
+                    gem_row.balance += gem_reward
+                    await session.flush()
+                    return achievement.unlocked_at, gem_row.balance
             except IntegrityError:
                 await session.rollback()
                 return None
-            await session.refresh(achievement)
-            return achievement.unlocked_at
 
 
 __all__ = ["AchievementRepository"]

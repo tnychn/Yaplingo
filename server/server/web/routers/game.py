@@ -5,6 +5,7 @@ from ..schemas.game import (
     AchievementClaimInput,
     AchievementClaimResponse,
     AchievementResponse,
+    GemBalanceResponse,
     LeaderboardResponse,
 )
 
@@ -22,6 +23,12 @@ async def leaderboard(user: User, service: Service) -> LeaderboardResponse:
 async def achievements(user: User, service: Service) -> list[AchievementResponse]:
     items = await service.game.list_achievements(user)
     return [AchievementResponse(**item.model_dump()) for item in items]
+
+
+@router.get("/gems")
+async def gems(user: User, service: Service) -> GemBalanceResponse:
+    balance = await service.game.get_gem_balance(user)
+    return GemBalanceResponse(balance=balance)
 
 
 @router.post("/achievements/claim")

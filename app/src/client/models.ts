@@ -60,6 +60,7 @@ export type AchievementResponse = {
   unlocked: boolean;
   unlocked_at: string | null;
   progress: number;
+  gem_reward: number;
 };
 
 export type ClaimAchievementRequest = {
@@ -68,5 +69,10 @@ export type ClaimAchievementRequest = {
 
 export type ClaimAchievementResponse = {
   achievement_key: string;
-  unlocked_at: string;
+  gems_awarded: number;
+  new_balance: number;
+};
+
+export type GemBalanceResponse = {
+  balance: number;
 };

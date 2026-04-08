@@ -79,6 +79,13 @@ class UserAchievement(SQLModel, table=True):
     )
 
 
+class UserGemBalance(SQLModel, table=True):
+    __tablename__ = "user_gem_balance"  # type: ignore
+
+    user_id: ULID = Field(foreign_key="user.id", primary_key=True, sa_type=ULIDType)
+    balance: int = Field(default=0, ge=0)
+
+
 class EchoAttempt(SQLModel, table=True):
     __tablename__ = "echo_attempt"  # type: ignore
 
@@ -143,4 +150,4 @@ class ChatSession(SQLModel, table=True):
     turns: list[ChatTurn] = Relationship(back_populates="session")
 
 
-__all__ = ["User", "UserAchievement", "EchoAttempt", "EchoSession", "ChatTurn", "ChatSession"]
+__all__ = ["User", "UserAchievement", "UserGemBalance", "EchoAttempt", "EchoSession", "ChatTurn", "ChatSession"]

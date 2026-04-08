@@ -24,6 +24,7 @@ class AchievementRule(BaseModel):
     desc: str
     threshold_type: Literal["lifetime_xp", "streak", "lifetime_lessons", "alltime_rank"]
     threshold: int
+    gem_reward: int
 
 
 class AchievementStatus(BaseModel):
@@ -33,11 +34,13 @@ class AchievementStatus(BaseModel):
     unlocked: bool
     unlocked_at: datetime | None = None
     progress: float
+    gem_reward: int
 
 
-class AchievementUnlock(BaseModel):
+class AchievementClaim(BaseModel):
     achievement_key: str
-    unlocked_at: datetime
+    gems_awarded: int
+    new_balance: int
 
 
 ACHIEVEMENT_RULES: tuple[AchievementRule, ...] = (
@@ -47,6 +50,7 @@ ACHIEVEMENT_RULES: tuple[AchievementRule, ...] = (
         desc="Earn your first 10 XP",
         threshold_type="lifetime_xp",
         threshold=10,
+        gem_reward=5,
     ),
     AchievementRule(
         key="bronze_mic",
@@ -54,6 +58,7 @@ ACHIEVEMENT_RULES: tuple[AchievementRule, ...] = (
         desc="Earn 500 XP lifetime",
         threshold_type="lifetime_xp",
         threshold=500,
+        gem_reward=10,
     ),
     AchievementRule(
         key="silver_mic",
@@ -61,6 +66,7 @@ ACHIEVEMENT_RULES: tuple[AchievementRule, ...] = (
         desc="Earn 2,000 XP lifetime",
         threshold_type="lifetime_xp",
         threshold=2000,
+        gem_reward=20,
     ),
     AchievementRule(
         key="gold_mic",
@@ -68,6 +74,7 @@ ACHIEVEMENT_RULES: tuple[AchievementRule, ...] = (
         desc="Earn 10,000 XP lifetime",
         threshold_type="lifetime_xp",
         threshold=10000,
+        gem_reward=40,
     ),
     AchievementRule(
         key="platinum_mic",
@@ -75,6 +82,7 @@ ACHIEVEMENT_RULES: tuple[AchievementRule, ...] = (
         desc="Earn 50,000 XP lifetime",
         threshold_type="lifetime_xp",
         threshold=50000,
+        gem_reward=75,
     ),
     AchievementRule(
         key="diamond_mic",
@@ -82,6 +90,7 @@ ACHIEVEMENT_RULES: tuple[AchievementRule, ...] = (
         desc="Earn 100,000 XP lifetime",
         threshold_type="lifetime_xp",
         threshold=100000,
+        gem_reward=150,
     ),
     AchievementRule(
         key="streak_5",
@@ -89,6 +98,7 @@ ACHIEVEMENT_RULES: tuple[AchievementRule, ...] = (
         desc="Maintain a 5-day streak",
         threshold_type="streak",
         threshold=5,
+        gem_reward=10,
     ),
     AchievementRule(
         key="streak_14",
@@ -96,6 +106,7 @@ ACHIEVEMENT_RULES: tuple[AchievementRule, ...] = (
         desc="Maintain a 14-day streak",
         threshold_type="streak",
         threshold=14,
+        gem_reward=20,
     ),
     AchievementRule(
         key="streak_30",
@@ -103,6 +114,7 @@ ACHIEVEMENT_RULES: tuple[AchievementRule, ...] = (
         desc="Maintain a 30-day streak",
         threshold_type="streak",
         threshold=30,
+        gem_reward=50,
     ),
     AchievementRule(
         key="streak_100",
@@ -110,6 +122,7 @@ ACHIEVEMENT_RULES: tuple[AchievementRule, ...] = (
         desc="Maintain a 100-day streak",
         threshold_type="streak",
         threshold=100,
+        gem_reward=100,
     ),
     AchievementRule(
         key="streak_365",
@@ -117,6 +130,7 @@ ACHIEVEMENT_RULES: tuple[AchievementRule, ...] = (
         desc="Practice every day for a year",
         threshold_type="streak",
         threshold=365,
+        gem_reward=500,
     ),
     AchievementRule(
         key="lesson_50",
@@ -124,6 +138,7 @@ ACHIEVEMENT_RULES: tuple[AchievementRule, ...] = (
         desc="Complete 50 sessions",
         threshold_type="lifetime_lessons",
         threshold=50,
+        gem_reward=15,
     ),
     AchievementRule(
         key="lesson_200",
@@ -131,6 +146,7 @@ ACHIEVEMENT_RULES: tuple[AchievementRule, ...] = (
         desc="Complete 200 sessions",
         threshold_type="lifetime_lessons",
         threshold=200,
+        gem_reward=30,
     ),
     AchievementRule(
         key="lesson_500",
@@ -138,6 +154,7 @@ ACHIEVEMENT_RULES: tuple[AchievementRule, ...] = (
         desc="Complete 500 sessions",
         threshold_type="lifetime_lessons",
         threshold=500,
+        gem_reward=75,
     ),
     AchievementRule(
         key="alltime_legend",
@@ -145,6 +162,7 @@ ACHIEVEMENT_RULES: tuple[AchievementRule, ...] = (
         desc="Reach #1 on the all-time leaderboard",
         threshold_type="alltime_rank",
         threshold=1,
+        gem_reward=1000,
     ),
 )
 
@@ -202,6 +220,9 @@ class GameService:
             return await self.store.user.increment_points_today(user, 0)
         return points_today
 
+    async def get_gem_balance(self, user: User) -> int:
+        return await self.repository.achievement.get_gem_balance(user.id)
+
     async def _is_alltime_rank_one(self, user: User) -> bool:
         rank_score = await self.store.leaderboard.get(user)
         return rank_score is not None and rank_score[0] == 1
@@ -238,6 +259,7 @@ class GameService:
                         unlocked=True,
                         unlocked_at=unlocked_at,
                         progress=1.0,
+                        gem_reward=rule.gem_reward,
                     )
                 )
                 continue
@@ -252,11 +274,12 @@ class GameService:
                     unlocked=False,
                     unlocked_at=None,
                     progress=round(progress, 2),
+                    gem_reward=rule.gem_reward,
                 )
             )
         return achievements
 
-    async def claim_achievement(self, user: User, achievement_key: str) -> AchievementUnlock:
+    async def claim_achievement(self, user: User, achievement_key: str) -> AchievementClaim:
         rule = next((item for item in ACHIEVEMENT_RULES if item.key == achievement_key), None)
         if rule is None:
             raise ValueError("Unknown achievement")
@@ -271,14 +294,20 @@ class GameService:
         if value < rule.threshold:
             raise PermissionError("Achievement criteria not met")
 
-        unlocked_at = await self.repository.achievement.unlock(user.id, achievement_key)
-        if unlocked_at is None:
+        claim_result = await self.repository.achievement.claim_and_award(
+            user.id,
+            achievement_key,
+            rule.gem_reward,
+        )
+        if claim_result is None:
             raise ValueError("Achievement already claimed")
+        _unlocked_at, new_balance = claim_result
 
-        return AchievementUnlock(
+        return AchievementClaim(
             achievement_key=achievement_key,
-            unlocked_at=unlocked_at,
+            gems_awarded=rule.gem_reward,
+            new_balance=new_balance,
         )
 
 
-__all__ = ["GameService", "LeaderboardEntry", "AchievementStatus", "AchievementUnlock"]
+__all__ = ["GameService", "LeaderboardEntry", "AchievementStatus", "AchievementClaim"]

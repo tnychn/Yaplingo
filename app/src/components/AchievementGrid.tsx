@@ -11,6 +11,7 @@ import { Text } from "./primitives";
 const BADGE_SIZE = 72;
 const BADGE_ICON_SIZE = 32;
 const MODAL_ICON_SIZE = 44;
+const GEM_ICON = require("../../assets/gem.png");
 
 const BadgeIcon = ({ cfg, size, dim = false }: { cfg?: BadgeConfig; size: number; dim?: boolean }) => {
   if (!cfg) {
@@ -124,14 +125,14 @@ const DetailModal = ({ item, claiming, onClose, onClaim }: DetailModalProps) => 
   const statusText = item.unlocked
     ? `Earned ${item.unlocked_at ? new Date(item.unlocked_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : ""}`
     : claimable
-      ? "Achievement complete. Tap below to claim."
+      ? "🎉 Achievement complete! Collect your reward!"
       : progressPercent >= 75
         ? "Almost there!"
         : progressPercent >= 50
-          ? "Halfway there!"
+          ? "Halfway through!"
           : progressPercent > 0
-            ? "Keep going!"
-            : "Start practicing to unlock this.";
+            ? "Keep it up!"
+            : "Start practicing.";
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
@@ -185,11 +186,16 @@ const DetailModal = ({ item, claiming, onClose, onClaim }: DetailModalProps) => 
             )}>
             {statusText}
           </Text>
+          <View style={tw`flex-row items-center gap-1 mt-2`}>
+            <Text style={tw`text-xs text-zinc-400`}>Reward:</Text>
+            <Image source={GEM_ICON} resizeMode="contain" style={{ width: 12, height: 12 }} />
+            <Text style={tw`text-xs font-bold text-green-600`}>{item.gem_reward} gems</Text>
+          </View>
           <Pressable
             onPress={claimable ? () => onClaim(item.key) : onClose}
             disabled={claimable && claiming}
             style={({ pressed }) => [
-              tw`mt-4 px-8 py-3 rounded-full items-center justify-center`,
+              tw`mt-4 px-8 py-3 rounded-full flex-row items-center justify-center gap-2`,
               {
                 backgroundColor: "#FFF",
                 borderWidth: 1,
@@ -198,8 +204,9 @@ const DetailModal = ({ item, claiming, onClose, onClaim }: DetailModalProps) => 
                 transform: [{ scale: pressed ? 0.97 : 1 }],
               },
             ]}>
+            {claimable && <Image source={GEM_ICON} resizeMode="contain" style={{ width: 16, height: 16 }} />}
             <Text style={tw`text-sm font-bold ${claimable ? "text-green-600" : "text-zinc-600"}`}>
-              {claimable ? (claiming ? "Claiming..." : "Claim") : "Close"}
+              {claimable ? (claiming ? "Claiming..." : `Collect ${item.gem_reward}`) : "Close"}
             </Text>
           </Pressable>
         </Pressable>
@@ -210,10 +217,12 @@ const DetailModal = ({ item, claiming, onClose, onClaim }: DetailModalProps) => 
 
 export default function AchievementGrid({
   achievements,
+  gemBalance,
   onClaim,
   claimingKey,
 }: {
   achievements: AchievementResponse[];
+  gemBalance: number;
   onClaim: (achievementKey: string) => void;
   claimingKey?: string | null;
 }) {
@@ -239,6 +248,10 @@ export default function AchievementGrid({
       <View style={tw`flex-row items-center justify-between px-1`}>
         <Text style={tw`text-xl font-bold text-zinc-800 dark:text-zinc-100`}>🏅 Achievements</Text>
         <View style={tw`flex-row items-center gap-2`}>
+          <View style={tw`flex-row items-center rounded-full bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1`}>
+            <Image source={GEM_ICON} resizeMode="contain" style={{ width: 12, height: 12 }} />
+            <Text style={tw`ml-1 text-xs font-bold text-zinc-600 dark:text-zinc-300`}>{gemBalance}</Text>
+          </View>
           {claimableCount > 0 && (
             <View style={tw`rounded-full bg-green-500 px-2 py-0.5`}>
               <Text style={tw`text-[10px] font-bold text-white`}>{claimableCount} to collect</Text>

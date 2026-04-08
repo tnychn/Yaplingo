@@ -9,6 +9,7 @@ import type {
   AchievementResponse,
   ClaimAchievementRequest,
   ClaimAchievementResponse,
+  GemBalanceResponse,
   Leaderboard,
   User,
   UserInsights,
@@ -110,14 +111,25 @@ export const useAchievementsQuery = () =>
     },
   });
 
+export const useGemBalanceQuery = () =>
+  useQuery<GemBalanceResponse, AxiosError>({
+    queryKey: ["game", "gems"],
+    queryFn: async () => {
+      const response = await client.get("/game/gems");
+      return response.data;
+    },
+  });
+
 export const useClaimAchievementMutation = () =>
   useMutation<ClaimAchievementResponse, AxiosError, ClaimAchievementRequest>({
     mutationFn: async (payload) => {
       const response = await client.post("/game/achievements/claim", payload);
       return response.data;
     },
-    onSettled: (_data, _error, _variables, _onMutateResult, context) =>
-      context.client.invalidateQueries({ queryKey: ["game", "achievements"] }),
+    onSettled: (_data, _error, _variables, _onMutateResult, context) => {
+      context.client.invalidateQueries({ queryKey: ["game", "achievements"] });
+      context.client.invalidateQueries({ queryKey: ["game", "gems"] });
+    },
   });
 
 export * from "./models";

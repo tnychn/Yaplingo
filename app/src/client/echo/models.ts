@@ -8,10 +8,15 @@ export type Scenario = {
 
 export type Session = {
   scenario: Scenario;
-  total: number;
   progress: number;
+  chances: number[];
   attempts: Attempt[][];
+  price: number;
+  expense: number;
+  total: number;
   completed: boolean;
+  attemptable: boolean;
+  points: number;
 };
 
 export type Attempt = {
@@ -22,11 +27,4 @@ export type Attempt = {
   };
 };
 
-export type Summary = {
-  points: number;
-};
-
-export type Response =
-  | { type: "session"; response: Session }
-  | { type: "attempt"; response: Attempt | null }
-  | { type: "summary"; response: Summary };
+export type Response = { type: "session"; response: Session } | { type: "attempt"; response: Attempt | null };

@@ -26,15 +26,15 @@ SESSION_TTL = timedelta(hours=1)
 class EchoSessionState(BaseModel):
     class Attempt(Result): ...
 
-    class Summary(BaseModel):
-        points: int
-
     _uid: ULID = PrivateAttr()
 
     scenario: Scenario
     progress: int = 0
+    chances: list[int] = Field(
+        default_factory=lambda data: [1 for _ in range(len(data["scenario"].transcripts))],
+    )
     attempts: list[list[Attempt]] = Field(
-        default_factory=lambda data: [[] for _ in range(len(data["scenario"].transcripts))]
+        default_factory=lambda data: [[] for _ in range(len(data["scenario"].transcripts))],
     )
 
     model_config = ConfigDict(frozen=True)
@@ -56,6 +56,20 @@ class EchoSessionState(BaseModel):
 
     @computed_field
     @cached_property
+    def price(self) -> int:
+        from server.formula import ECHO_SESSION_PRICE_BASE
+
+        return self.expense + ECHO_SESSION_PRICE_BASE
+
+    @computed_field
+    @cached_property
+    def expense(self) -> int:
+        from server import formula
+
+        return formula.get_echo_session_expense(self)
+
+    @computed_field
+    @cached_property
     def total(self) -> int:
         return len(self.scenario.transcripts)
 
@@ -66,25 +80,29 @@ class EchoSessionState(BaseModel):
         # needs final proceed to increment progress to equal `total` to mark completion
         return self.progress >= self.total
 
+    @computed_field
+    @cached_property
+    def attemptable(self) -> bool:
+        return not self.completed and self.chances[self.progress] > len(self.attempts[self.progress])
+
+    @computed_field
+    @cached_property
+    def points(self) -> int:
+        from server import formula
+
+        return formula.get_echo_session_points(self)
+
     @cached_property
     def transcript(self) -> Transcript:
         assert not self.completed, "session already completed"
         return self.scenario.transcripts[self.progress]
-
-    @cached_property
-    def summary(self) -> Summary:
-        assert self.completed, "session not completed yet"
-        from server import formula
-
-        points = formula.get_echo_session_points(self)
-        return EchoSessionState.Summary(points=points)
 
     def entity(self) -> EchoSession:
         s = EchoSession(
             user_id=self._uid,
             topic=self.scenario.topic,
             scenario=self.scenario.scenario,
-            points=self.summary.points,
+            points=self.points,
             transcripts=[t.text for t in self.scenario.transcripts],
         )
         s.attempts = [
@@ -93,10 +111,7 @@ class EchoSessionState(BaseModel):
                 index=index,
                 audio=attempt.audio,
                 feedback=attempt.feedback,
-                pronunciation=attempt.pronunciation.model_dump(
-                    mode="json",
-                    exclude_computed_fields=True,
-                ),
+                pronunciation=attempt.pronunciation.model_dump(mode="json"),
             )
             for index, attempts in enumerate(self.attempts)
             for attempt in attempts
@@ -128,10 +143,6 @@ class EchoStore:
         if data is not None:
             return EchoSessionState(**data).with_uid(uid)
 
-    async def increment_session_progress(self, session: EchoSessionState) -> None:
-        op = self._client.json().numincrby(repr(session), "$.progress", 1)
-        await cast(Awaitable[str], op)
-
     async def record_session_attempt(self, session: EchoSessionState, attempt: EchoSessionState.Attempt) -> None:
         op = self._client.json().arrappend(
             repr(session),
@@ -141,7 +152,15 @@ class EchoStore:
                 exclude_computed_fields=True,
             ),
         )
-        await cast(Awaitable[list[int | None]], op)
+        await cast(Awaitable, op)
+
+    async def increment_session_chance(self, session: EchoSessionState) -> None:
+        op = self._client.json().numincrby(repr(session), f"$.chances[{session.progress}]", 1)
+        await cast(Awaitable, op)
+
+    async def increment_session_progress(self, session: EchoSessionState) -> None:
+        op = self._client.json().numincrby(repr(session), "$.progress", 1)
+        await cast(Awaitable, op)
 
     async def discard_session(self, session: EchoSessionState) -> None:
         await self._client.delete(repr(session))

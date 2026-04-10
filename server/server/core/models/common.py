@@ -155,3 +155,47 @@ class Pronunciation(BaseModel):
     @cached_property
     def score(self) -> float:
         return sum(a.score for a in self.alignments) / len(self.alignments)
+
+
+class Insights(BaseModel):
+    class PhonemeError(BaseModel):
+        """Represents a frequently occurring phoneme error pattern."""
+
+        phoneme: str
+        expected: str | None
+        predicted: str | None
+        operation: str  # replace, insert, delete
+        count: int
+
+    class WordError(BaseModel):
+        """Represents a word that consistently causes pronunciation difficulty."""
+
+        word: str
+        average: float
+        count: int
+
+    """Aggregated pronunciation statistics from user's sessions."""
+
+    average: float
+    phoneme_errors: list[PhonemeError]  # top N most frequent
+    word_errors: list[WordError]  # top N lowest scoring
+
+    # TODO: to be improved
+    def format(self) -> str:
+        """Format into a human-readable string for LLM scenario prompts."""
+        lines = []
+        if self.word_errors:
+            words = ", ".join(f'"{e.word}"' for e in self.word_errors[:5])
+            lines.append(f"Frequently mispronounced words: {words}")
+        if self.phoneme_errors:
+            sounds = []
+            for e in self.phoneme_errors[:5]:
+                if e.operation == "replace" and e.expected and e.predicted:
+                    sounds.append(f"/{e.expected}/ (often pronounced as /{e.predicted}/)")
+                elif e.operation == "delete" and e.expected:
+                    sounds.append(f"/{e.expected}/ (often dropped)")
+                elif e.operation == "insert" and e.predicted:
+                    sounds.append(f"/{e.predicted}/ (often inserted)")
+            if sounds:
+                lines.append(f"Problematic sounds: {', '.join(sounds)}")
+        return "\n".join(lines)

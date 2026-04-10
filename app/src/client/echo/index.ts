@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 
 import useSession from "../useSession";
-import type { Attempt, Response, Session, Summary } from "./models";
+import type { Attempt, Response, Session } from "./models";
 
 export enum EchoSessionStatus {
   LOADING_NEW,
@@ -22,17 +22,13 @@ export type EchoSession =
       data: Session;
     }
   | {
-      status: EchoSessionStatus.READY_ATTEMPT | EchoSessionStatus.READY_NEXT;
+      status: EchoSessionStatus.READY_ATTEMPT | EchoSessionStatus.READY_NEXT | EchoSessionStatus.COMPLETED;
       data: Session;
-    }
-  | {
-      status: EchoSessionStatus.COMPLETED;
-      data: Session & { summary: Summary };
     };
 
 type State = EchoSession & { next?: Response["type"] };
 
-type Action = ["SUBMIT"] | ["PROCEED"] | ["RECEIVE", Response];
+type Action = ["SUBMIT"] | ["BUY"] | ["PROCEED"] | ["RECEIVE", Response];
 
 const reduceState = (state: State, [type, payload]: Action): State => {
   switch (type) {
@@ -44,6 +40,7 @@ const reduceState = (state: State, [type, payload]: Action): State => {
         next: "attempt",
       };
     }
+    case "BUY":
     case "PROCEED": {
       const session = state.data as Session;
       return {
@@ -60,9 +57,9 @@ const reduceState = (state: State, [type, payload]: Action): State => {
       switch (type) {
         case "session": {
           return {
-            status: EchoSessionStatus.READY_ATTEMPT,
+            status: response.completed ? EchoSessionStatus.COMPLETED : EchoSessionStatus.READY_ATTEMPT,
             data: response,
-            next: response.completed ? "summary" : "attempt",
+            next: response.completed ? undefined : "attempt",
           };
         }
         case "attempt": {
@@ -71,17 +68,12 @@ const reduceState = (state: State, [type, payload]: Action): State => {
           attempts[session.progress] = response
             ? [...attempts[session.progress], response]
             : attempts[session.progress]; // local optimistic update
+          const attemptable =
+            response === null || session.chances[session.progress] > attempts[session.progress].length;
           return {
-            status: response !== null ? EchoSessionStatus.READY_NEXT : EchoSessionStatus.READY_ATTEMPT,
-            data: { ...session, attempts },
+            status: attemptable ? EchoSessionStatus.READY_ATTEMPT : EchoSessionStatus.READY_NEXT,
+            data: { ...session, attempts, attemptable },
             next: "session",
-          };
-        }
-        case "summary": {
-          return {
-            status: EchoSessionStatus.COMPLETED,
-            data: { ...(state.data as Session), summary: response },
-            next: undefined,
           };
         }
       }
@@ -114,6 +106,14 @@ export const useEchoSession = ({ onClose }: { onClose?: (status: EchoSessionStat
     { onClose },
   );
 
+  const buy = useCallback(() => {
+    if (![EchoSessionStatus.READY_NEXT, EchoSessionStatus.READY_ATTEMPT].includes(state.status)) {
+      throw new Error("session not ready to buy");
+    }
+    send({ type: "buy" });
+    _dispatch(["BUY"]);
+  }, [state.status, send, _dispatch]);
+
   const proceed = useCallback(() => {
     if (![EchoSessionStatus.READY_NEXT, EchoSessionStatus.READY_ATTEMPT].includes(state.status)) {
       throw new Error("session not ready to proceed");
@@ -128,6 +128,7 @@ export const useEchoSession = ({ onClose }: { onClose?: (status: EchoSessionStat
       data: state.data,
     } as EchoSession,
     submit,
+    buy,
     proceed,
     abort,
     end,

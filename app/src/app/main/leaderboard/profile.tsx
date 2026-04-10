@@ -1,15 +1,16 @@
 import { Pressable, ScrollView, View } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { FlameIcon, XIcon, ZapIcon } from "lucide-react-native";
+import { XIcon, ZapIcon } from "lucide-react-native";
 import tw from "twrnc";
 
 import { useUserQuery, type User } from "~/client";
-import { Heatmap } from "~/components";
 import { Spinner, Text } from "~/components/primitives";
 import { useNavigationOptions } from "~/hooks";
 
-const Header = ({ user }: { user?: User }) => {
+import { ActivityCard, ProfileCard, StreakCard } from "../profile";
+
+const Header = () => {
   const theme = useTheme();
   const router = useRouter();
   return (
@@ -17,28 +18,14 @@ const Header = ({ user }: { user?: User }) => {
       <Pressable onPress={() => router.dismiss()} style={({ pressed }) => tw.style(pressed && "opacity-50")}>
         <XIcon color={tw.color("zinc-500")} size={26} strokeWidth={2.5} />
       </Pressable>
-      {user && (
-        <View style={[tw`absolute inset-x-0 items-center justify-center`]}>
-          <Text style={tw`text-2xl font-medium leading-[0]`}>{`@${user.name}`}</Text>
-        </View>
-      )}
-    </View>
-  );
-};
-
-export const StreakCard = ({ user }: { user: User }) => {
-  return (
-    <View style={tw`grow items-center justify-center rounded-2xl border-2 border-zinc-500/50 p-4`}>
-      <View style={tw`flex-row items-center`}>
-        <FlameIcon color={tw.color("orange-500")} fill={tw.color("orange-500")} size={36} />
-        <Text style={tw`text-5xl font-bold leading-[0] tracking-tighter text-orange-500`}>{user.streak ?? "-"}</Text>
+      <View style={[tw`absolute inset-x-0 items-center justify-center`]}>
+        <Text style={tw`text-2xl font-bold`}>PROFILE CARD</Text>
       </View>
-      <Text style={tw`text-center text-xl font-medium text-orange-500`}>Day Streak</Text>
     </View>
   );
 };
 
-export const PointsCard = ({ user }: { user: User }) => {
+const PointsCard = ({ user }: { user: User }) => {
   return (
     <View style={tw`grow items-center justify-center rounded-2xl border-2 border-zinc-500/50 p-4`}>
       <View style={tw`flex-row items-center`}>
@@ -50,22 +37,13 @@ export const PointsCard = ({ user }: { user: User }) => {
   );
 };
 
-export const ActivityCard = ({ user, disabled = false }: { user: User; disabled?: boolean }) => {
-  return (
-    <View style={tw`gap-4 rounded-2xl border-2 border-zinc-500/50 py-2.5`}>
-      <Text style={tw`px-4 text-2xl font-bold`}>Activity</Text>
-      <Heatmap entries={user.activity} contentContainerStyle={tw`px-4`} disabled={disabled} />
-    </View>
-  );
-};
-
 export default function MainLeaderboardProfileScreen() {
   const { uid } = useLocalSearchParams<{ uid: string }>();
 
   const { data: user } = useUserQuery(uid);
 
   useNavigationOptions({
-    header: () => <Header user={user} />,
+    header: () => <Header />,
   });
 
   if (!user) {
@@ -77,6 +55,7 @@ export default function MainLeaderboardProfileScreen() {
   }
   return (
     <ScrollView alwaysBounceVertical={false} contentContainerStyle={tw`flex-1 gap-4 p-4`}>
+      <ProfileCard user={user} />
       <View style={tw`flex-row gap-4`}>
         <StreakCard user={user} />
         <PointsCard user={user} />

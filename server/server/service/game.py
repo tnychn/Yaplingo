@@ -112,15 +112,15 @@ class GameService:
         return Counter([s.completed_at.astimezone(tz).date() for s in sessions])
 
     async def get_user_today_points(self, user: User) -> int:
-        points_today = await self.store.points.get_today(user)
+        points_today = await self.store.user.get_points_today(user)
         if points_today is None:
-            return await self.store.points.increment_today(user, 0)
+            return await self.store.user.increment_points_today(user, 0)
         return points_today
 
     # TODO: combine into one atomic operation
     async def increment_user_points(self, user: User, points_to_add: int) -> None:
         assert points_to_add >= 0, "points to add must be non-negative"
-        points_today = await self.store.points.increment_today(user, points_to_add)
+        points_today = await self.store.user.increment_points_today(user, points_to_add)
         await self.store.leaderboard.increment(user, points_to_add)
         await self.repository.user.increment_points(user, points_to_add)
         if points_today >= user.streak_milestone and not user.streak_claimed_today:
@@ -187,7 +187,6 @@ class GameService:
 
     async def get_mastery(self, user: User) -> list[TopicMastery]:
         """Get topic mastery data derived from session history."""
-        tz = ZoneInfo(user.timezone)
         sessions = await self.repository.aggregation.get_sessions_by_user(user)
 
         topic_data: dict[str, dict] = {

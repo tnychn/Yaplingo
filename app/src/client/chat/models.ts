@@ -8,12 +8,13 @@ export type Scenario = {
 
 export type Session = {
   scenario: Scenario;
-  limit: number;
-  quota: number;
-  finished: boolean;
   turns: Turn[];
+  limit: number;
   tasks: EvaluationTask[];
   conversation: Conversation;
+  quota: number;
+  finished: boolean;
+  points: number;
 };
 
 export type Turn = {
@@ -23,6 +24,7 @@ export type Turn = {
   reply: ConversationAssistantMessage;
   pronunciation: Pronunciation;
   evaluation: Evaluation;
+  score: number;
 };
 
 export type Conversation = {
@@ -55,14 +57,6 @@ export type EvaluationTask = {
 export type EvaluationCriteria = {
   accuracy: number;
   appropriacy: number;
-  vocabulary: number;
 };
 
-export type Summary = {
-  points: number;
-};
-
-export type Response =
-  | { type: "session"; response: Session }
-  | { type: "turn"; response: Turn | null }
-  | { type: "summary"; response: Summary };
+export type Response = { type: "session"; response: Session } | { type: "turn"; response: Turn | null };

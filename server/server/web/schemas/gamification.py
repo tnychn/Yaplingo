@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from pydantic import BaseModel
 
 
@@ -17,19 +15,7 @@ class StatsResponse(BaseModel):
     lifetime_xp: int
 
 
-class TopicMasteryResponse(BaseModel):
-    topic: str
-    total_xp: int
-    lesson_count: int
-    avg_accuracy: float
-    avg_speed_ms: float
-    mastery_score: float
-    tier: str
-    updated_at: datetime | None
-
-
 __all__ = [
     "HistoryEntry",
     "StatsResponse",
-    "TopicMasteryResponse",
 ]

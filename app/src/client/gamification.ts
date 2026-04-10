@@ -2,7 +2,7 @@ import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { type AxiosError } from "axios";
 
 import client from "./client";
-import type { HistoryEntry, StatsResponse, TopicMasteryResponse } from "./models";
+import type { HistoryEntry, StatsResponse } from "./models";
 
 const GAMIFICATION_QUERY_KEY = ["gamification"] as const;
 
@@ -24,15 +24,4 @@ export const useStatsQuery = (): UseQueryResult<StatsResponse, AxiosError> =>
       return data;
     },
     staleTime: 5 * 60 * 1000,
-  });
-
-export const useMasteryQuery = (): UseQueryResult<TopicMasteryResponse[], AxiosError> =>
-  useQuery<TopicMasteryResponse[], AxiosError>({
-    queryKey: [...GAMIFICATION_QUERY_KEY, "mastery"],
-    queryFn: async () => {
-      const { data } = await client.get<TopicMasteryResponse[]>("/gamification/mastery");
-      return data;
-    },
-    staleTime: 0,
-    gcTime: 5 * 60 * 1000,
   });

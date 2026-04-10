@@ -5,15 +5,15 @@ import { useIsFocused } from "@react-navigation/native";
 import { FlameIcon, TargetIcon, TrendingUpIcon, ZapIcon } from "lucide-react-native";
 import tw from "twrnc";
 
-import { useMasteryQuery, useStatsQuery, useXPHistoryQuery, type StatsResponse } from "~/client";
-import { MasteryRadar, XPBarChart } from "~/components";
+import { useStatsQuery, useXPHistoryQuery, type StatsResponse } from "~/client";
+import { XPBarChart } from "~/components";
 import { Spinner, Text } from "~/components/primitives";
 
 const BG_COLOR = "#ffffff";
 type Range = 7 | 30;
 
 const StatCard = ({ label, value, icon }: { label: string; value: string; icon: React.ReactNode }) => (
-  <View style={tw`flex-1 items-center bg-green-600/20 rounded-xl px-2 py-2`}>
+  <View style={tw`flex-1 items-center bg-green-600/20 rounded-xl px-2 py-3`}>
     {icon}
     <Text style={tw`text-base font-bold text-green-800 mt-0.5`}>{value}</Text>
     <Text style={tw`text-[10px] text-green-700/70 text-center mt-0.5`}>{label}</Text>
@@ -26,7 +26,7 @@ const LifetimeXPBanner = ({ xp, todayXp, stats }: { xp: number; todayXp: number;
   const displayXp = isToday ? todayXp : xp;
 
   return (
-    <View style={tw`rounded-2xl border-2 border-zinc-500/50 overflow-hidden`}>
+    <View style={[tw`rounded-2xl border-2 border-zinc-500/50 overflow-hidden`, { minHeight: 232 }]}>
       <View style={tw`flex-row border-b border-zinc-200`}>
         {(["lifetime", "today"] as const).map((t) => (
           <Pressable
@@ -44,7 +44,7 @@ const LifetimeXPBanner = ({ xp, todayXp, stats }: { xp: number; todayXp: number;
         ))}
       </View>
 
-      <View style={tw`flex-row items-center justify-between px-5 py-4`}>
+      <View style={tw`flex-row items-center justify-between px-5 py-5`}>
         <View style={tw`flex-row items-center gap-3`}>
           <View style={tw`w-10 h-10 rounded-xl bg-green-500/15 items-center justify-center`}>
             <ZapIcon size={22} color="#22C55E" fill="#22C55E" />
@@ -93,13 +93,11 @@ export default function ProgressScreen() {
   const [playToken, setPlayToken] = useState(0);
   const { data: history, isLoading: historyLoading } = useXPHistoryQuery(range);
   const { data: stats, isLoading: statsLoading } = useStatsQuery();
-  const { data: mastery, refetch: refetchMastery } = useMasteryQuery();
 
   useEffect(() => {
     if (!isFocused) return;
     setPlayToken((t) => t + 1);
-    void refetchMastery();
-  }, [isFocused, refetchMastery]);
+  }, [isFocused]);
 
   useEffect(() => {
     setPlayToken((t) => t + 1);
@@ -118,16 +116,15 @@ export default function ProgressScreen() {
   }
 
   return (
-    <ScrollView style={[tw`flex-1`, { backgroundColor: BG_COLOR }]} contentContainerStyle={tw`pb-12`}>
+    <ScrollView style={[tw`flex-1`, { backgroundColor: BG_COLOR }]} contentContainerStyle={tw`flex-grow pb-4`}>
       <View style={[tw`items-center pt-2 pb-4`, { paddingTop: insets.top + 4, backgroundColor: BG_COLOR }]}>
         <Text style={[tw`text-4xl`, { fontFamily: "Feather-Bold", color: "#115c1a" }]}>Progress</Text>
       </View>
-      <View style={tw`px-4 gap-4`}>
+      <View style={tw`flex-1 justify-center px-4 gap-4`}>
         {stats && <LifetimeXPBanner xp={stats.lifetime_xp} todayXp={todayXp} stats={stats} />}
         {history && history.length > 0 && (
           <XPBarChart history={history} playToken={playToken} range={range} onRangeChange={setRange} />
         )}
-        <MasteryRadar data={mastery ?? []} playToken={playToken} />
       </View>
     </ScrollView>
   );

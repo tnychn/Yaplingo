@@ -68,16 +68,3 @@ export type StatsResponse = {
   completion_rate_30d: number;
   lifetime_xp: number;
 };
-
-export type MasteryTier = "Bronze" | "Silver" | "Gold" | "Platinum" | "Diamond";
-
-export type TopicMasteryResponse = {
-  topic: string;
-  total_xp: number;
-  lesson_count: number;
-  avg_accuracy: number;
-  avg_speed_ms: number;
-  mastery_score: number;
-  tier: MasteryTier;
-  updated_at: string | null;
-};

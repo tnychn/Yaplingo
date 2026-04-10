@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Query
 
-from server.service.game import HistoryEntry, StatsData, TopicMastery
+from server.service.game import HistoryEntry, StatsData
 
 from ..dependencies import Service, User
 
@@ -21,12 +21,6 @@ async def get_xp_history(
 async def get_stats(user: User, service: Service) -> StatsData:
     """Get aggregated stats for the current user."""
     return await service.game.get_stats(user)
-
-
-@router.get("/mastery", response_model=list[TopicMastery])
-async def get_mastery(user: User, service: Service) -> list[TopicMastery]:
-    """Get topic mastery data for the current user."""
-    return await service.game.get_mastery(user)
 
 
 __all__ = ["router"]

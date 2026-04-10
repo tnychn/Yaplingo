@@ -7,19 +7,10 @@ from pydantic import BaseModel
 from ulid import ULID
 
 from server.repository import Repository
-from server.repository.entities import EchoSession, User
+from server.repository.entities import User
 from server.store import Store
 
 DAILY_GOAL_XP = 300
-TOPICS = ["Food", "Culture", "Travel", "Business", "Technology"]
-MASTERY_XP_CEILING = 5000
-MASTERY_TIER_THRESHOLDS = {
-    "Bronze": 0.0,
-    "Silver": 0.25,
-    "Gold": 0.50,
-    "Platinum": 0.75,
-    "Diamond": 0.90,
-}
 
 
 class LeaderboardEntry(BaseModel):
@@ -36,17 +27,6 @@ class HistoryEntry(BaseModel):
     lessons_completed: int
 
 
-class TopicMastery(BaseModel):
-    topic: str
-    total_xp: int
-    lesson_count: int
-    avg_accuracy: float
-    avg_speed_ms: float
-    mastery_score: float
-    tier: str
-    updated_at: datetime | None
-
-
 class StatsData(BaseModel):
     seven_day_avg_xp: float
     thirty_day_best_streak: int
@@ -55,13 +35,6 @@ class StatsData(BaseModel):
 
 
 LeaderboardPeriod = Literal["this-week", "all-time"]
-
-
-def _get_mastery_tier(score: float) -> str:
-    for tier, threshold in reversed(MASTERY_TIER_THRESHOLDS.items()):
-        if score >= threshold:
-            return tier
-    return "Bronze"
 
 
 class GameService:
@@ -185,68 +158,5 @@ class GameService:
             lifetime_xp=lifetime_xp,
         )
 
-    async def get_mastery(self, user: User) -> list[TopicMastery]:
-        """Get topic mastery data derived from session history."""
-        sessions = await self.repository.aggregation.get_sessions_by_user(user)
 
-        topic_data: dict[str, dict] = {
-            topic: {"xp": 0, "count": 0, "accuracy_sum": 0, "speed_sum": 0, "updated_at": None}
-            for topic in TOPICS
-        }
-
-        for session in sessions:
-            topic = getattr(session, "topic", None)
-            if isinstance(session, EchoSession) and topic:
-                normalized = topic.title()
-                if normalized in topic_data:
-                    topic_data[normalized]["xp"] += session.points
-                    topic_data[normalized]["count"] += 1
-                    # Estimate accuracy from attempts if available
-                    if session.attempts:
-                        avg_score = sum(
-                            a.pronunciation.get("score", 80) for a in session.attempts
-                        ) / len(session.attempts)
-                        topic_data[normalized]["accuracy_sum"] += avg_score
-                        topic_data[normalized]["speed_sum"] += 2500  # estimated
-                    if (
-                        topic_data[normalized]["updated_at"] is None
-                        or session.completed_at > topic_data[normalized]["updated_at"]
-                    ):
-                        topic_data[normalized]["updated_at"] = session.completed_at
-
-        mastery_list: list[TopicMastery] = []
-        for topic in TOPICS:
-            data = topic_data[topic]
-            count = data["count"]
-            total_xp = data["xp"]
-
-            if count > 0:
-                avg_accuracy = data["accuracy_sum"] / count
-                avg_speed = data["speed_sum"] / count
-            else:
-                avg_accuracy = 0.0
-                avg_speed = 0
-
-            # Calculate mastery score (0-1)
-            xp_factor = min(total_xp / MASTERY_XP_CEILING, 1.0) * 0.5
-            acc_factor = (avg_accuracy / 100) * 0.3 if avg_accuracy > 0 else 0
-            lesson_factor = min(count / 50, 1.0) * 0.2
-            mastery_score = xp_factor + acc_factor + lesson_factor
-            tier = _get_mastery_tier(mastery_score)
-
-            mastery_list.append(
-                TopicMastery(
-                    topic=topic,
-                    total_xp=total_xp,
-                    lesson_count=count,
-                    avg_accuracy=round(avg_accuracy, 1),
-                    avg_speed_ms=int(avg_speed),
-                    mastery_score=round(mastery_score, 2),
-                    tier=tier,
-                    updated_at=data["updated_at"],
-                )
-            )
-        return mastery_list
-
-
-__all__ = ["GameService", "LeaderboardPeriod", "HistoryEntry", "TopicMastery", "StatsData"]
+__all__ = ["GameService", "LeaderboardPeriod", "HistoryEntry", "StatsData"]

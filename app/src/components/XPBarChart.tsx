@@ -8,7 +8,7 @@ import type { HistoryEntry } from "~/client/models";
 import Text from "./primitives/Text";
 
 const DAILY_GOAL_XP = 300;
-const CHART_HEIGHT = 200;
+const CHART_HEIGHT = 260;
 const TOP_PAD = 24;
 const BOTTOM_PAD = 20;
 const BAR_AREA = CHART_HEIGHT - TOP_PAD - BOTTOM_PAD;
@@ -60,7 +60,7 @@ export default function XPBarChart({
   const selectedEntry = selected !== null ? history[selected] : null;
 
   return (
-    <View style={tw`rounded-2xl border-2 border-zinc-500/50 p-3`}>
+    <View style={tw`rounded-2xl border-2 border-zinc-500/50 p-4`}>
       {/* Header with embedded range toggle */}
       <View style={tw`flex-row items-center justify-between mb-2 px-1`}>
         <Text style={tw`text-base font-bold`}>📊 XP History</Text>

@@ -135,7 +135,7 @@ ACHIEVEMENT_RULES: tuple[AchievementRule, ...] = (
     AchievementRule(
         key="lesson_50",
         title="Half Century",
-        desc="Complete 50 sessions",
+        desc="Complete 50 Echo + Chat sessions",
         threshold_type="lifetime_lessons",
         threshold=50,
         gem_reward=15,
@@ -143,7 +143,7 @@ ACHIEVEMENT_RULES: tuple[AchievementRule, ...] = (
     AchievementRule(
         key="lesson_200",
         title="Dedicated",
-        desc="Complete 200 sessions",
+        desc="Complete 200 Echo + Chat sessions",
         threshold_type="lifetime_lessons",
         threshold=200,
         gem_reward=30,
@@ -151,7 +151,7 @@ ACHIEVEMENT_RULES: tuple[AchievementRule, ...] = (
     AchievementRule(
         key="lesson_500",
         title="Lesson Legend",
-        desc="Complete 500 sessions",
+        desc="Complete 500 Echo + Chat sessions",
         threshold_type="lifetime_lessons",
         threshold=500,
         gem_reward=75,
@@ -244,7 +244,7 @@ class GameService:
 
     async def list_achievements(self, user: User) -> list[AchievementStatus]:
         unlocked_map = await self.repository.achievement.list_unlocked(user.id)
-        sessions_total = await self.repository.aggregation.count_sessions_by_user(user)
+        sessions_total = await self.repository.aggregation.count_completed_sessions_by_user(user)
         alltime_rank_one = await self._is_alltime_rank_one(user)
 
         achievements: list[AchievementStatus] = []
@@ -288,7 +288,7 @@ class GameService:
         if achievement_key in unlocked_map:
             raise ValueError("Achievement already claimed")
 
-        sessions_total = await self.repository.aggregation.count_sessions_by_user(user)
+        sessions_total = await self.repository.aggregation.count_completed_sessions_by_user(user)
         alltime_rank_one = await self._is_alltime_rank_one(user)
         value = self._metric_value(rule, user, sessions_total, alltime_rank_one)
         if value < rule.threshold:

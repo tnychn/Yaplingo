@@ -68,12 +68,12 @@ class ChatService:
             assert self.state.finished, "session not finished yet"
             await self._service.repository.chat.save(self.state.entity())
 
-            # points_net = self.state.points - self.state.expense
-            points_net = self.state.points  # TODO: chat mode currently does not have expense
+            multiplier = await self._service.repository.shop.get_active_multiplier(self.user.id)
+            points_net = max(int(self.state.points * multiplier), 0)
             await self._service.repository.user.increment_points(self.user, points_net)
             await self._service.store.leaderboard.increment(self.user, points_net)
 
-            points_today = await self._service.store.user.increment_points_today(self.user, self.state.points)
+            points_today = await self._service.store.user.increment_points_today(self.user, points_net)
             if points_today >= self.user.streak_milestone and not self.user.streak_claimed_today:
                 await self._service.repository.user.increment_streak(self.user)
 

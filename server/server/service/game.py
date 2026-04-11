@@ -8,6 +8,7 @@ from ulid import ULID
 
 from server.repository import Repository
 from server.repository.entities import User
+from server.repository.shop import GEM_SPEND_RATES
 from server.store import Store
 
 
@@ -41,6 +42,35 @@ class AchievementClaim(BaseModel):
     achievement_key: str
     gems_awarded: int
     new_balance: int
+
+
+class ActiveEvent(BaseModel):
+    id: ULID
+    name: str
+    description: str
+    multiplier: float
+    starts_at: datetime
+    ends_at: datetime
+
+
+class GemConfig(BaseModel):
+    spend_rates: dict[str, int]
+
+
+class GemSpend(BaseModel):
+    new_balance: int
+    item_key: str
+    xp_added: int
+
+
+class InventoryStatus(BaseModel):
+    streak_freezes: int
+
+
+class UseSkill(BaseModel):
+    skill_key: str
+    message: str
+    remaining: int
 
 
 ACHIEVEMENT_RULES: tuple[AchievementRule, ...] = (
@@ -223,6 +253,27 @@ class GameService:
     async def get_gem_balance(self, user: User) -> int:
         return await self.repository.achievement.get_gem_balance(user.id)
 
+    async def get_gem_config(self) -> GemConfig:
+        return GemConfig(spend_rates=dict(GEM_SPEND_RATES))
+
+    async def list_active_events(self, user: User) -> list[ActiveEvent]:
+        active = await self.repository.shop.list_active_events(user.id)
+        return [
+            ActiveEvent(
+                id=event.id,
+                name=event.name,
+                description=event.description,
+                multiplier=event.multiplier,
+                starts_at=event.starts_at,
+                ends_at=event.ends_at,
+            )
+            for event in active
+        ]
+
+    async def get_inventory(self, user: User) -> InventoryStatus:
+        inventory = await self.repository.shop.get_inventory(user.id)
+        return InventoryStatus(streak_freezes=inventory.streak_freezes)
+
     async def _is_alltime_rank_one(self, user: User) -> bool:
         rank_score = await self.store.leaderboard.get(user)
         return rank_score is not None and rank_score[0] == 1
@@ -309,5 +360,33 @@ class GameService:
             new_balance=new_balance,
         )
 
+    async def spend_gems(self, user: User, item_key: str) -> GemSpend:
+        result = await self.repository.shop.spend_gems(user.id, item_key)
+        if result.xp_added > 0:
+            await self.store.leaderboard.increment(user, result.xp_added)
+        return GemSpend(
+            new_balance=result.new_balance,
+            item_key=result.item_key,
+            xp_added=result.xp_added,
+        )
 
-__all__ = ["GameService", "LeaderboardEntry", "AchievementStatus", "AchievementClaim"]
+    async def use_skill(self, user: User, item_key: str) -> UseSkill:
+        result = await self.repository.shop.use_skill(user.id, item_key)
+        return UseSkill(
+            skill_key=result.skill_key,
+            message=result.message,
+            remaining=result.remaining,
+        )
+
+
+__all__ = [
+    "GameService",
+    "LeaderboardEntry",
+    "AchievementStatus",
+    "AchievementClaim",
+    "ActiveEvent",
+    "GemConfig",
+    "GemSpend",
+    "InventoryStatus",
+    "UseSkill",
+]

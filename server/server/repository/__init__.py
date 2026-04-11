@@ -11,6 +11,7 @@ from .achievement import AchievementRepository
 from .aggregation import AggregationRepository
 from .chat import ChatRepository
 from .echo import EchoRepository
+from .shop import ShopRepository
 from .user import UserRepository
 
 if TYPE_CHECKING:
@@ -64,6 +65,10 @@ class Repository:
     @cached_property
     def achievement(self) -> AchievementRepository:
         return AchievementRepository(self.session)
+
+    @cached_property
+    def shop(self) -> ShopRepository:
+        return ShopRepository(self.session)
 
 
 __all__ = ["Repository"]

@@ -76,3 +76,36 @@ export type ClaimAchievementResponse = {
 export type GemBalanceResponse = {
   balance: number;
 };
+
+export type SpendGemsRequest = {
+  item_key: string;
+};
+
+export type SpendGemsResponse = {
+  new_balance: number;
+  item_key: string;
+  xp_added: number;
+};
+
+export type GemConfigResponse = {
+  spend_rates: Record<string, number>;
+};
+
+export type ActiveEvent = {
+  id: string;
+  name: string;
+  description: string;
+  multiplier: number;
+  starts_at: string;
+  ends_at: string;
+};
+
+export type UserInventoryResponse = {
+  streak_freezes: number;
+};
+
+export type UseSkillResponse = {
+  skill_key: string;
+  message: string;
+  remaining: number;
+};

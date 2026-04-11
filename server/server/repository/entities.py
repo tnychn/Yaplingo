@@ -86,6 +86,43 @@ class UserGemBalance(SQLModel, table=True):
     balance: int = Field(default=0, ge=0)
 
 
+class UserGemTransaction(SQLModel, table=True):
+    __tablename__ = "user_gem_transaction"  # type: ignore
+
+    id: ULID = Field(primary_key=True, default_factory=ULID, sa_type=ULIDType)
+    user_id: ULID = Field(foreign_key="user.id", index=True, sa_type=ULIDType)
+    amount: int
+    reason: str = Field(max_length=100)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_type=TIMESTAMP(timezone=True))
+
+
+class UserInventory(SQLModel, table=True):
+    __tablename__ = "user_inventory"  # type: ignore
+
+    user_id: ULID = Field(foreign_key="user.id", primary_key=True, sa_type=ULIDType)
+    streak_freezes: int = Field(default=0, ge=0)
+
+
+class UserStreakState(SQLModel, table=True):
+    __tablename__ = "user_streak_state"  # type: ignore
+
+    user_id: ULID = Field(foreign_key="user.id", primary_key=True, sa_type=ULIDType)
+    previous_streak: int = Field(default=0, ge=0)
+
+
+class UserXPMultiplierEvent(SQLModel, table=True):
+    __tablename__ = "user_xp_multiplier_event"  # type: ignore
+
+    id: ULID = Field(primary_key=True, default_factory=ULID, sa_type=ULIDType)
+    user_id: ULID = Field(foreign_key="user.id", index=True, sa_type=ULIDType)
+    name: str = Field(max_length=100)
+    description: str = Field(default="", max_length=255)
+    multiplier: float = Field(ge=1.0, le=50.0)
+    starts_at: datetime = Field(sa_type=TIMESTAMP(timezone=True), index=True)
+    ends_at: datetime = Field(sa_type=TIMESTAMP(timezone=True), index=True)
+    is_active: bool = Field(default=True)
+
+
 class EchoAttempt(SQLModel, table=True):
     __tablename__ = "echo_attempt"  # type: ignore
 
@@ -150,4 +187,16 @@ class ChatSession(SQLModel, table=True):
     turns: list[ChatTurn] = Relationship(back_populates="session")
 
 
-__all__ = ["User", "UserAchievement", "UserGemBalance", "EchoAttempt", "EchoSession", "ChatTurn", "ChatSession"]
+__all__ = [
+    "User",
+    "UserAchievement",
+    "UserGemBalance",
+    "UserGemTransaction",
+    "UserInventory",
+    "UserStreakState",
+    "UserXPMultiplierEvent",
+    "EchoAttempt",
+    "EchoSession",
+    "ChatTurn",
+    "ChatSession",
+]

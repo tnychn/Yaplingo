@@ -57,13 +57,19 @@ class UserService:
 
     async def get(self, id: ULID, check_streak: bool = True) -> User | None:
         user = await self.repository.user.get_one(id)
-        # reset streak if over 1 day gap since last streak (in user's timezone)
+        # For a 1-day miss, a streak freeze can preserve the streak when the user earns
+        # today's streak milestone, so only reset early when no freeze can apply.
         if check_streak and user is not None and user.streak > 0:
-            tz = ZoneInfo(user.timezone)
+            tz = ZoneInfo(str(user.timezone))
             today = datetime.now(tz).date()
             streaked_date = user.streaked_at.astimezone(tz).date()
-            if today - streaked_date > timedelta(days=1):
+            gap_days = (today - streaked_date).days
+            if gap_days > 2:
                 await self.repository.user.reset_streak(user)
+            elif gap_days == 2:
+                streak_freezes = await self.repository.shop.get_streak_freeze_count(user.id)
+                if streak_freezes <= 0:
+                    await self.repository.user.reset_streak(user)
         return user
 
     async def get_insights(self, user: User) -> Insights | None:

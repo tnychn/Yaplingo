@@ -1,12 +1,18 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 
 from ..dependencies import Service, User
 from ..schemas.game import (
     AchievementClaimInput,
     AchievementClaimResponse,
     AchievementResponse,
+    ActiveEventResponse,
     GemBalanceResponse,
+    GemConfigResponse,
     LeaderboardResponse,
+    SpendGemsInput,
+    SpendGemsResponse,
+    UseSkillResponse,
+    UserInventoryResponse,
 )
 
 router = APIRouter()
@@ -29,6 +35,56 @@ async def achievements(user: User, service: Service) -> list[AchievementResponse
 async def gems(user: User, service: Service) -> GemBalanceResponse:
     balance = await service.game.get_gem_balance(user)
     return GemBalanceResponse(balance=balance)
+
+
+@router.get("/gems/config")
+async def gem_config(service: Service) -> GemConfigResponse:
+    config = await service.game.get_gem_config()
+    return GemConfigResponse(**config.model_dump())
+
+
+@router.post("/gems/spend")
+async def spend_gems(
+    payload: SpendGemsInput,
+    user: User,
+    service: Service,
+) -> SpendGemsResponse:
+    try:
+        result = await service.game.spend_gems(user, payload.item_key)
+    except (ValueError, PermissionError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
+    return SpendGemsResponse(**result.model_dump())
+
+
+@router.get("/active-events")
+async def active_events(user: User, service: Service) -> list[ActiveEventResponse]:
+    events = await service.game.list_active_events(user)
+    return [ActiveEventResponse(**event.model_dump()) for event in events]
+
+
+@router.get("/inventory")
+async def inventory(user: User, service: Service) -> UserInventoryResponse:
+    inv = await service.game.get_inventory(user)
+    return UserInventoryResponse(**inv.model_dump())
+
+
+@router.post("/inventory/use")
+async def use_skill(
+    user: User,
+    service: Service,
+    item_key: str = Query(..., min_length=1),
+) -> UseSkillResponse:
+    try:
+        result = await service.game.use_skill(user, item_key)
+    except (ValueError, PermissionError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
+    return UseSkillResponse(**result.model_dump())
 
 
 @router.post("/achievements/claim")

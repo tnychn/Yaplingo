@@ -1,6 +1,17 @@
+from datetime import datetime
+
 from pydantic import BaseModel
 
-from server.service.game import AchievementClaim, AchievementStatus, LeaderboardEntry
+from server.service.game import (
+    AchievementClaim,
+    AchievementStatus,
+    ActiveEvent,
+    GemConfig,
+    GemSpend,
+    InventoryStatus,
+    LeaderboardEntry,
+    UseSkill,
+)
 
 
 class LeaderboardResponse(BaseModel):
@@ -22,10 +33,37 @@ class GemBalanceResponse(BaseModel):
     balance: int
 
 
+class GemConfigResponse(GemConfig): ...
+
+
+class SpendGemsInput(BaseModel):
+    item_key: str
+
+
+class SpendGemsResponse(GemSpend): ...
+
+
+class ActiveEventResponse(ActiveEvent):
+    starts_at: datetime
+    ends_at: datetime
+
+
+class UserInventoryResponse(InventoryStatus): ...
+
+
+class UseSkillResponse(UseSkill): ...
+
+
 __all__ = [
     "LeaderboardResponse",
     "AchievementResponse",
     "AchievementClaimInput",
     "AchievementClaimResponse",
     "GemBalanceResponse",
+    "GemConfigResponse",
+    "SpendGemsInput",
+    "SpendGemsResponse",
+    "ActiveEventResponse",
+    "UserInventoryResponse",
+    "UseSkillResponse",
 ]

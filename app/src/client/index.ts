@@ -7,11 +7,17 @@ import { $token } from "../store";
 import client from "./client";
 import type {
   AchievementResponse,
+  ActiveEvent,
   ClaimAchievementRequest,
   ClaimAchievementResponse,
   GemBalanceResponse,
+  GemConfigResponse,
   Leaderboard,
+  SpendGemsRequest,
+  SpendGemsResponse,
+  UseSkillResponse,
   User,
+  UserInventoryResponse,
   UserInsights,
 } from "./models";
 
@@ -117,6 +123,64 @@ export const useGemBalanceQuery = () =>
     queryFn: async () => {
       const response = await client.get("/game/gems");
       return response.data;
+    },
+  });
+
+export const useGemConfigQuery = () =>
+  useQuery<GemConfigResponse, AxiosError>({
+    queryKey: ["game", "gems", "config"],
+    queryFn: async () => {
+      const response = await client.get("/game/gems/config");
+      return response.data;
+    },
+    staleTime: 10 * 60 * 1000,
+  });
+
+export const useActiveEventsQuery = () =>
+  useQuery<ActiveEvent[], AxiosError>({
+    queryKey: ["game", "active-events"],
+    queryFn: async () => {
+      const response = await client.get("/game/active-events");
+      return response.data;
+    },
+    staleTime: 30 * 1000,
+    refetchInterval: 60 * 1000,
+  });
+
+export const useInventoryQuery = () =>
+  useQuery<UserInventoryResponse, AxiosError>({
+    queryKey: ["game", "inventory"],
+    queryFn: async () => {
+      const response = await client.get("/game/inventory");
+      return response.data;
+    },
+    staleTime: 30 * 1000,
+  });
+
+export const useSpendGemsMutation = () =>
+  useMutation<SpendGemsResponse, AxiosError, SpendGemsRequest>({
+    mutationFn: async (payload) => {
+      const response = await client.post("/game/gems/spend", payload);
+      return response.data;
+    },
+    onSettled: (_data, _error, _variables, _onMutateResult, context) => {
+      context.client.invalidateQueries({ queryKey: ["game", "gems"] });
+      context.client.invalidateQueries({ queryKey: ["game", "inventory"] });
+      context.client.invalidateQueries({ queryKey: ["game", "active-events"] });
+      context.client.invalidateQueries({ queryKey: ["game", "leaderboard"] });
+      context.client.invalidateQueries({ queryKey: ["user", "me"] });
+    },
+  });
+
+export const useUseSkillMutation = () =>
+  useMutation<UseSkillResponse, AxiosError, string>({
+    mutationFn: async (itemKey) => {
+      const response = await client.post(`/game/inventory/use?item_key=${encodeURIComponent(itemKey)}`);
+      return response.data;
+    },
+    onSettled: (_data, _error, _variables, _onMutateResult, context) => {
+      context.client.invalidateQueries({ queryKey: ["game", "inventory"] });
+      context.client.invalidateQueries({ queryKey: ["user", "me"] });
     },
   });
 

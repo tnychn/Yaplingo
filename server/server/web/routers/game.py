@@ -9,6 +9,7 @@ from ..schemas.game import (
     GemBalanceResponse,
     GemConfigResponse,
     LeaderboardResponse,
+    ProximityResponse,
     SpendGemsInput,
     SpendGemsResponse,
     UseSkillResponse,
@@ -23,6 +24,16 @@ async def leaderboard(user: User, service: Service) -> LeaderboardResponse:
     entries = await service.game.list_leaderboard()
     my_entry = await service.game.get_leaderboard_user(user)
     return LeaderboardResponse(me=my_entry, entries=entries)
+
+
+@router.get("/leaderboard/proximity")
+async def leaderboard_proximity(
+    user: User,
+    service: Service,
+    xp_window: int = Query(200, ge=10, le=1000),
+) -> ProximityResponse:
+    proximity = await service.game.get_leaderboard_proximity(user, xp_window=xp_window)
+    return ProximityResponse(**proximity.model_dump())
 
 
 @router.get("/achievements")

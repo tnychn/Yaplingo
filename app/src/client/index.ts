@@ -13,6 +13,7 @@ import type {
   GemBalanceResponse,
   GemConfigResponse,
   Leaderboard,
+  ProximityResponse,
   SpendGemsRequest,
   SpendGemsResponse,
   UseSkillResponse,
@@ -106,6 +107,17 @@ export const useLeaderboardQuery = () =>
       const response = await client.get("/game/leaderboard");
       return response.data;
     },
+  });
+
+export const useProximityQuery = () =>
+  useQuery<ProximityResponse, AxiosError>({
+    queryKey: ["game", "leaderboard", "proximity"],
+    queryFn: async () => {
+      const response = await client.get<ProximityResponse>("/game/leaderboard/proximity");
+      return response.data;
+    },
+    staleTime: 30 * 1000,
+    refetchOnWindowFocus: true,
   });
 
 export const useAchievementsQuery = () =>

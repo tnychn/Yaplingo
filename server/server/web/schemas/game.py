@@ -10,6 +10,8 @@ from server.service.game import (
     GemSpend,
     InventoryStatus,
     LeaderboardEntry,
+    Proximity,
+    ProximityNeighbour,
     UseSkill,
 )
 
@@ -48,6 +50,12 @@ class ActiveEventResponse(ActiveEvent):
     ends_at: datetime
 
 
+class ProximityNeighbourResponse(ProximityNeighbour): ...
+
+
+class ProximityResponse(Proximity): ...
+
+
 class UserInventoryResponse(InventoryStatus): ...
 
 
@@ -64,6 +72,8 @@ __all__ = [
     "SpendGemsInput",
     "SpendGemsResponse",
     "ActiveEventResponse",
+    "ProximityNeighbourResponse",
+    "ProximityResponse",
     "UserInventoryResponse",
     "UseSkillResponse",
 ]

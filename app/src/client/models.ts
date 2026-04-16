@@ -26,6 +26,21 @@ export type Leaderboard = {
   me: LeaderboardEntry;
 };
 
+export type ProximityNeighbour = {
+  uid: string;
+  name: string;
+  rank: number;
+  score: number;
+  score_gap: number;
+};
+
+export type ProximityResponse = {
+  above: ProximityNeighbour[];
+  below: ProximityNeighbour[];
+  my_rank: number;
+  my_score: number;
+};
+
 export type PronunciationAlignment = {
   token: string;
   score: number;

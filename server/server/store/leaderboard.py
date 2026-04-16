@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from redis.asyncio import Redis
 from ulid import ULID
 
@@ -30,6 +32,36 @@ class LeaderboardStore:
         if score is None:
             return None
         return (rank + 1, int(score))  # zrevrank is 0-based so add 1 for 1-based rank
+
+    async def get_by_uid(self, uid: ULID) -> tuple[int, int] | None:
+        rank = await self._client.zrevrank(LeaderboardStore.Key.leaderboard, str(uid))
+        if rank is None:
+            return None
+        score = await self._client.zscore(LeaderboardStore.Key.leaderboard, str(uid))
+        if score is None:
+            return None
+        return (rank + 1, int(score))
+
+    async def list_proximity_window(self, score: int, window: int, limit: int = 5) -> tuple[list[tuple[ULID, int]], list[tuple[ULID, int]]]:
+        above_results = await self._client.zrangebyscore(
+            LeaderboardStore.Key.leaderboard,
+            score + 1,
+            score + window,
+            start=0,
+            num=limit,
+            withscores=True,
+        )
+        below_results = await self._client.zrevrangebyscore(
+            LeaderboardStore.Key.leaderboard,
+            score - 1,
+            score - window,
+            start=0,
+            num=limit,
+            withscores=True,
+        )
+        above = [(ULID.from_str(uid), int(raw_score)) for uid, raw_score in above_results]
+        below = [(ULID.from_str(uid), int(raw_score)) for uid, raw_score in below_results]
+        return above, below
 
     async def count(self) -> int:
         return await self._client.zcard(LeaderboardStore.Key.leaderboard)

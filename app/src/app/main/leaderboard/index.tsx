@@ -17,7 +17,8 @@ import LottieView from "lottie-react-native";
 import { TrophyIcon, ZapIcon } from "lucide-react-native";
 import tw from "twrnc";
 
-import { API_URL, useCurrentUserQuery, useLeaderboardQuery, type LeaderboardEntry } from "~/client";
+import { API_URL, useCurrentUserQuery, useLeaderboardQuery, useProximityQuery, type LeaderboardEntry } from "~/client";
+import ProximityBanner from "~/components/ProximityBanner";
 import { Spinner, Text } from "~/components/primitives";
 
 const LOTTIE_CROWN_URI = "https://lottie.host/e371643e-e22e-4a3e-a1ce-b8ab03785b60/WiYpVXACUw.lottie";
@@ -378,12 +379,23 @@ export default function MainLeaderboardScreen() {
     isRefetching: isRefetchingLeaderboard,
     refetch: refetchLeaderboard,
   } = useLeaderboardQuery();
+  const { data: proximity } = useProximityQuery();
+  const [isProximityDismissed, setIsProximityDismissed] = useState(false);
+
+  const nearbyRival = useMemo(() => {
+    const closestBelow = proximity?.below?.[0];
+    return closestBelow && closestBelow.score_gap <= 50 ? closestBelow : null;
+  }, [proximity]);
 
   useFocusEffect(
     useCallback(() => {
       setKey(Math.random());
     }, []),
   );
+
+  useEffect(() => {
+    setIsProximityDismissed(false);
+  }, [nearbyRival?.uid]);
 
   const openProfile = (entry: LeaderboardEntry) =>
     router.navigate(
@@ -459,6 +471,9 @@ export default function MainLeaderboardScreen() {
           <View style={tw`w-full p-2`}>
             <LeaderboardListItem entry={leaderboard.me} animated={false} />
           </View>
+          {!isProximityDismissed && (
+            <ProximityBanner neighbour={nearbyRival} onDismiss={() => setIsProximityDismissed(true)} />
+          )}
         </>
       ) : (
         <Spinner size={36} />

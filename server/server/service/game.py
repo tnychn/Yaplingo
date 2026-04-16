@@ -19,6 +19,21 @@ class LeaderboardEntry(BaseModel):
     score: int
 
 
+class ProximityNeighbour(BaseModel):
+    uid: ULID
+    name: str
+    rank: int
+    score: int
+    score_gap: int
+
+
+class Proximity(BaseModel):
+    above: list[ProximityNeighbour]
+    below: list[ProximityNeighbour]
+    my_rank: int
+    my_score: int
+
+
 class AchievementRule(BaseModel):
     key: str
     title: str
@@ -236,6 +251,36 @@ class GameService:
         count = await self.store.leaderboard.count()
         return LeaderboardEntry(uid=user.id, name=user.name, rank=count + 1, score=0)
 
+    async def get_leaderboard_proximity(self, user: User, *, xp_window: int = 200, limit: int = 5) -> Proximity:
+        me = await self.get_leaderboard_user(user)
+        if me.score <= 0:
+            return Proximity(above=[], below=[], my_rank=me.rank, my_score=me.score)
+
+        above_rows, below_rows = await self.store.leaderboard.list_proximity_window(me.score, window=xp_window, limit=limit)
+        uids = list(dict.fromkeys([uid for uid, _score in above_rows + below_rows]))
+        users = await self.repository.user.get_many(uids)
+        users_map: dict[ULID, User] = {u.id: u for u in users}
+
+        async def to_neighbour(uid: ULID, score: int) -> ProximityNeighbour:
+            rank_score = await self.store.leaderboard.get_by_uid(uid)
+            rank = rank_score[0] if rank_score else 0
+            target = users_map.get(uid)
+            name = target.name if target else "Unknown"
+            return ProximityNeighbour(
+                uid=uid,
+                name=name,
+                rank=rank,
+                score=score,
+                score_gap=abs(score - me.score),
+            )
+
+        return Proximity(
+            above=[await to_neighbour(uid, score) for uid, score in above_rows],
+            below=[await to_neighbour(uid, score) for uid, score in below_rows],
+            my_rank=me.rank,
+            my_score=me.score,
+        )
+
     async def get_user_year_activity(self, user: User) -> dict[date, int]:
         tz = ZoneInfo(user.timezone)
         year = datetime.now(tz).year
@@ -382,6 +427,8 @@ class GameService:
 __all__ = [
     "GameService",
     "LeaderboardEntry",
+    "ProximityNeighbour",
+    "Proximity",
     "AchievementStatus",
     "AchievementClaim",
     "ActiveEvent",

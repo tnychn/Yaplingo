@@ -1,6 +1,5 @@
 from collections import Counter
-from datetime import date, datetime, timedelta
-from typing import Literal
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
@@ -10,31 +9,12 @@ from server.repository import Repository
 from server.repository.entities import User
 from server.store import Store
 
-DAILY_GOAL_XP = 300
-
 
 class LeaderboardEntry(BaseModel):
     uid: ULID
     name: str
     rank: int
     score: int
-
-
-class HistoryEntry(BaseModel):
-    date_key: str
-    xp_earned: int
-    goal_met: bool
-    lessons_completed: int
-
-
-class StatsData(BaseModel):
-    seven_day_avg_xp: float
-    thirty_day_best_streak: int
-    completion_rate_30d: float
-    lifetime_xp: int
-
-
-LeaderboardPeriod = Literal["this-week", "all-time"]
 
 
 class GameService:
@@ -99,64 +79,5 @@ class GameService:
         if points_today >= user.streak_milestone and not user.streak_claimed_today:
             await self.repository.user.increment_streak(user)
 
-    async def get_xp_history(self, user: User, days: int = 30) -> list[HistoryEntry]:
-        """Get XP history for the last N days, filling in zeros for missing days."""
-        tz = ZoneInfo(user.timezone)
-        today = datetime.now(tz).date()
-        start_date = today - timedelta(days=days - 1)
-        start = datetime(start_date.year, start_date.month, start_date.day, tzinfo=tz)
-        end = datetime(today.year, today.month, today.day, tzinfo=tz) + timedelta(days=1)
 
-        sessions = await self.repository.aggregation.get_sessions_by_user(user, start=start, end=end)
-
-        daily_xp: dict[str, int] = {}
-        daily_sessions: dict[str, int] = {}
-        for s in sessions:
-            day = s.completed_at.astimezone(tz).date().isoformat()
-            daily_xp[day] = daily_xp.get(day, 0) + s.points
-            daily_sessions[day] = daily_sessions.get(day, 0) + 1
-
-        history: list[HistoryEntry] = []
-        current = start_date
-        while current <= today:
-            key = current.isoformat()
-            xp = daily_xp.get(key, 0)
-            sessions_count = daily_sessions.get(key, 0)
-            history.append(
-                HistoryEntry(
-                    date_key=key,
-                    xp_earned=xp,
-                    goal_met=xp >= DAILY_GOAL_XP,
-                    lessons_completed=sessions_count,
-                )
-            )
-            current += timedelta(days=1)
-        return history
-
-    async def get_stats(self, user: User) -> StatsData:
-        """Get aggregated stats for the user."""
-        history = await self.get_xp_history(user, 30)
-        last_7 = history[-7:]
-        seven_day_avg = sum(e.xp_earned for e in last_7) / 7
-        active_days = sum(1 for e in history if e.xp_earned > 0)
-        completion_rate = (active_days / 30) * 100
-
-        best_streak = current_run = 0
-        for entry in history:
-            if entry.xp_earned > 0:
-                current_run += 1
-                best_streak = max(best_streak, current_run)
-            else:
-                current_run = 0
-
-        lifetime_xp = user.points
-
-        return StatsData(
-            seven_day_avg_xp=round(seven_day_avg, 1),
-            thirty_day_best_streak=best_streak,
-            completion_rate_30d=round(completion_rate, 1),
-            lifetime_xp=lifetime_xp,
-        )
-
-
-__all__ = ["GameService", "LeaderboardPeriod", "HistoryEntry", "StatsData"]
+__all__ = ["GameService"]

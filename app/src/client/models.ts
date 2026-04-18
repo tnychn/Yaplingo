@@ -52,19 +52,3 @@ export type Transcript = {
   audio: string;
   sequence: string;
 };
-
-// ── Gamification Types ─────────────────────────────────────────────────────
-
-export type HistoryEntry = {
-  date_key: string;
-  xp_earned: number;
-  goal_met: boolean;
-  lessons_completed: number;
-};
-
-export type StatsResponse = {
-  seven_day_avg_xp: number;
-  thirty_day_best_streak: number;
-  completion_rate_30d: number;
-  lifetime_xp: number;
-};

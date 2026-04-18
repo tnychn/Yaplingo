@@ -94,6 +94,5 @@ export const useLeaderboardQuery = () =>
     },
   });
 
-export * from "./gamification";
 export * from "./models";
 export * from "./client";

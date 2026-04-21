@@ -1,22 +1,26 @@
 import React, { useEffect, useMemo, useRef } from "react";
 import { ScrollView, View, type ScrollViewProps } from "react-native";
+import { useTheme } from "@react-navigation/native";
 import tw from "twrnc";
 
-import Text from "./Text";
-import Tooltip from "./Tooltip";
+import { Text, Tooltip } from "./primitives";
 
 type Entry = { date: Date; count: number };
 
 export default function Heatmap({
-  entries = [],
+  entries = {},
   squareGap = 4,
   squareSize = 16,
+  disabled = false,
   ...props
 }: {
-  entries?: Entry[];
+  entries?: Record<string, number>;
   squareGap?: number;
   squareSize?: number;
+  disabled?: boolean;
 } & ScrollViewProps) {
+  const theme = useTheme();
+
   const ref = useRef<ScrollView>(null);
 
   const weeks = useMemo(() => {
@@ -39,8 +43,9 @@ export default function Heatmap({
         const date = new Date(weekstart);
         date.setDate(weekstart.getDate() + d);
         if (date.getTime() > today.getTime()) break;
-        const entry = entries.find((e) => e.date.toDateString() === date.toDateString());
-        week.days.push({ date, count: entry?.count ?? 0 });
+        const key = Object.keys(entries).find((e) => new Date(e).toDateString() === date.toDateString());
+        const count = key ? entries[key] : 0;
+        week.days.push({ date, count });
       }
       weeks.push(week);
       weekstart.setDate(weekstart.getDate() + 7);
@@ -51,17 +56,25 @@ export default function Heatmap({
   useEffect(() => ref.current?.scrollToEnd({ animated: false }), []);
 
   return (
-    <ScrollView ref={ref} horizontal={true} showsHorizontalScrollIndicator={false} {...props}>
+    <ScrollView
+      ref={ref}
+      horizontal={true}
+      alwaysBounceHorizontal={false}
+      showsHorizontalScrollIndicator={false}
+      {...props}>
       <View style={tw`gap-2`}>
         <View style={[tw`flex-row`, { gap: squareGap }]}>
           {weeks.map((week, index) => (
             <View key={index} style={{ gap: squareGap }}>
               {week.days.map((day) => {
-                const intensity = Math.min(Math.ceil(day.count / 2) * 100, 900);
+                const intensity = theme.dark
+                  ? Math.max(900 - Math.floor(day.count / 2) * 100, 100)
+                  : Math.min(Math.ceil(day.count / 2) * 100, 900);
                 const color = tw.color(`emerald-${intensity || 100}`);
                 return (
                   <Tooltip
                     key={day.date.getTime()}
+                    disabled={disabled}
                     content={`${day.date.toLocaleDateString("en-GB", {
                       weekday: "short",
                       month: "short",
@@ -86,7 +99,7 @@ export default function Heatmap({
           {weeks.map((week, index) => (
             <View key={index} style={[tw`flex-row`, { width: squareSize + squareGap }]}>
               {(index === 0 || week.month !== weeks[index - 1]?.month) && (
-                <Text style={[tw`text-xs text-zinc-500`, { width: (squareSize + squareGap) * 2 }]} numberOfLines={1}>
+                <Text style={[tw`text-xs text-neutral-500`, { width: (squareSize + squareGap) * 2 }]} numberOfLines={1}>
                   {week.month}
                 </Text>
               )}

@@ -4,8 +4,8 @@ import { useRouter } from "expo-router";
 import tw from "twrnc";
 
 import { useRegisterMutation } from "~/client";
-import { Spinner, Text, TextInput } from "~/components/";
-import { useFormReducer, useNavigationOptions } from "~/hooks";
+import { Spinner, Text, TextInput } from "~/components/primitives";
+import { useFormReducer, useSetNavigationOptions } from "~/hooks";
 
 const Header = () => (
   <View style={tw`bg-green-500 p-6`}>
@@ -40,11 +40,11 @@ export default function AccountRegisterScreen() {
 
   const valid = !!form.username && !!form.password && form.password === form.passwordConfirm;
 
-  useNavigationOptions({ header: () => <Header /> });
+  useSetNavigationOptions({ header: () => <Header /> });
 
   return (
     <View style={[tw`flex-1`, { paddingBottom: insets.bottom }]}>
-      <KeyboardAvoidingView behavior="padding" style={tw`flex-grow justify-center gap-4 p-4`}>
+      <KeyboardAvoidingView behavior="padding" style={tw`grow justify-center gap-4 p-4`}>
         <View style={tw`gap-6`}>
           <View style={tw`gap-2`}>
             <Text style={tw`text-base font-medium text-neutral-500`}>USERNAME</Text>

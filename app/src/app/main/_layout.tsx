@@ -10,20 +10,24 @@ type Tab = {
 
 const TABS: Record<string, Tab> = {
   index: {
-    title: "Home",
+    title: "HOME",
     icon: require("@/icons/tabs/home.png"),
+  },
+  achievements: {
+    title: "ACHIEVEMENTS",
+    icon: require("@/icons/tabs/shop.png"),
   },
   learn: {
     header: false,
-    title: "Learn",
+    title: "LEARN",
     icon: require("@/icons/tabs/learn.png"),
   },
-  community: {
-    title: "Community",
-    icon: require("@/icons/tabs/community.png"),
+  leaderboard: {
+    title: "LEADERBOARD",
+    icon: require("@/icons/tabs/leaderboard.png"),
   },
   profile: {
-    title: "Profile",
+    title: "PROFILE",
     icon: require("@/icons/tabs/profile.png"),
   },
 };
@@ -40,7 +44,7 @@ export default function MainLayout() {
       screenOptions={{
         tabBarShowLabel: false,
         tabBarStyle: tw`h-22 border-t-2 pt-4`,
-        headerTitleStyle: [tw`text-2xl tracking-tight`, { fontFamily: "DINNextRoundedLTW01-Medium" }],
+        headerTitleStyle: [tw`text-2xl tracking-tight`, { fontFamily: "DINNextRoundedLTW01-Bold" }],
       }}>
       {Object.entries(TABS).map(([name, tab]) => (
         <Tabs.Screen

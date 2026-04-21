@@ -1,40 +1,55 @@
-from datetime import timedelta
-from typing import Awaitable, cast
+from typing import TYPE_CHECKING
 
-from pydantic import TypeAdapter
+from pydantic import RedisDsn
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from redis.asyncio import Redis as AsyncRedis
-from ulid import ULID
 
-from ..core.generators.transcript import Transcript
-from .settings import settings
+from .chat import ChatStore
+from .echo import EchoStore
+from .leaderboard import LeaderboardStore
+from .user import UserStore
 
-TranscriptModel = TypeAdapter(Transcript)
+if TYPE_CHECKING:
+    cached_property = property
+else:
+    from functools import cached_property
 
-TRANSCRIPT_TTL = timedelta(hours=1)
+
+class Settings(BaseSettings):
+    url: RedisDsn
+
+    model_config = SettingsConfigDict(env_prefix="store_")
+
+
+settings = Settings.model_validate({})
 
 
 class Store:
     def __init__(self):
-        self._client = AsyncRedis.from_url(str(settings.url), decode_responses=True)
+        self.client = AsyncRedis.from_url(str(settings.url), decode_responses=True)
 
     @classmethod
     async def create(cls):
         return cls()
 
     async def dispose(self):
-        return await self._client.aclose()
+        await self.client.aclose()
 
-    async def save_transcript(self, transcript: Transcript):
-        # `mode="json"` ensures `id: ULID` is serialized as a string
-        mapping = TranscriptModel.dump_python(transcript, mode="json")
-        hsetex = self._client.hsetex(
-            f"transcript:{str(transcript.id)}",
-            ex=TRANSCRIPT_TTL,
-            mapping=mapping,
-        )
-        await cast(Awaitable[int], hsetex)
+    @cached_property
+    def echo(self) -> EchoStore:
+        return EchoStore(self.client)
 
-    async def get_transcript(self, tid: ULID) -> Transcript | None:
-        hgetall = self._client.hgetall(f"transcript:{str(tid)}")
-        mapping = await cast(Awaitable[dict], hgetall)
-        return TranscriptModel.validate_python(mapping) if mapping else None
+    @cached_property
+    def chat(self) -> ChatStore:
+        return ChatStore(self.client)
+
+    @cached_property
+    def user(self) -> UserStore:
+        return UserStore(self.client)
+
+    @cached_property
+    def leaderboard(self) -> LeaderboardStore:
+        return LeaderboardStore(self.client)
+
+
+__all__ = ["Store"]

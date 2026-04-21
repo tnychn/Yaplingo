@@ -1,80 +1,62 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, View } from "react-native";
 import Animated, {
+  FadeIn,
   interpolate,
   runOnJS,
+  SlideInRight,
+  SlideOutLeft,
   useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { TrueSheet } from "@lodev09/react-native-true-sheet";
 import { useTheme } from "@react-navigation/native";
-import {
-  AudioQuality,
-  setAudioModeAsync,
-  useAudioPlayer,
-  useAudioRecorder,
-  useAudioRecorderState,
-  type RecordingOptions,
-} from "expo-audio";
+import { useQueryClient } from "@tanstack/react-query";
+import type { RecorderState } from "expo-audio";
+import { useAudioPlayer } from "expo-audio";
 import { useRouter } from "expo-router";
+import { useAtomValue } from "jotai";
 import {
   ArrowRightIcon,
-  AudioLinesIcon,
-  CheckIcon,
   EarIcon,
   FlipHorizontalIcon,
-  MicIcon,
+  PlayIcon,
   RedoIcon,
+  RotateCwIcon,
+  StarsIcon,
   XIcon,
 } from "lucide-react-native";
 import tw from "twrnc";
 
-import { useEchoMutation, useEchoResultQuery, useEchoTranscriptsQuery } from "~/client";
-import type { Transcript } from "~/client/models";
-import { Spinner, Text } from "~/components";
-import { useNavigationOptions } from "~/hooks";
-import { getLocalFileBase64 } from "~/utils";
-
-const RECORDING_DURATION_THRESHOLD = 1500; // ms
+import { useCurrentUserQuery } from "~/client";
+import { API_URL } from "~/client/client";
+import { EchoSessionStatus, useEchoSession, type Attempt, type EchoSession, type Session } from "~/client/echo";
+import { PronunciationBreakdown, RecordButton } from "~/components";
+import { Spinner, Text } from "~/components/primitives";
+import { useAudio, useSetNavigationOptions } from "~/hooks";
+import { $token } from "~/store";
+import { getScoreColor } from "~/utils";
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-const RECORDING_OPTIONS: RecordingOptions = {
-  extension: ".wav",
-  bitRate: 128_000,
-  sampleRate: 48_000,
-  numberOfChannels: 1,
-  ios: {
-    extension: ".wav",
-    outputFormat: "lpcm",
-    audioQuality: AudioQuality.HIGH,
-  },
-  android: {
-    outputFormat: "aac_adts",
-    audioEncoder: "aac",
-  },
-};
-
 const Header = ({
-  attempted,
-  transcript,
-  progress,
-  onProgress,
-  disableProgress,
+  session,
+  recorderState,
+  onProceed,
+  onClose,
 }: {
-  attempted: boolean;
-  transcript?: Transcript;
-  progress: number;
-  onProgress: () => void;
-  disableProgress: boolean;
+  session: EchoSession;
+  recorderState: RecorderState;
+  onProceed: () => void;
+  onClose: () => void;
 }) => {
   const theme = useTheme();
-  const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  const { data: transcripts, ...queryTranscripts } = useEchoTranscriptsQuery();
+  const disableProceed = recorderState.isRecording || session.status === EchoSessionStatus.PENDING_ATTEMPT;
 
   return (
     <>
@@ -83,330 +65,504 @@ const Header = ({
           tw`flex-row items-center justify-between px-4 pb-2`,
           { paddingTop: insets.top, backgroundColor: theme.colors.card },
         ]}>
-        <Pressable onPress={() => router.dismiss()} style={({ pressed }) => tw.style(pressed && "opacity-50")}>
-          <XIcon color={tw.color("neutral-500")} size={26} strokeWidth={2.5} />
+        <Pressable onPress={onClose} style={({ pressed }) => tw.style(pressed && "opacity-50")}>
+          <XIcon color={tw.color("zinc-500")} size={26} strokeWidth={2.5} />
         </Pressable>
         <View style={[tw`absolute inset-x-0 items-center justify-center`, { top: insets.top }]}>
-          {queryTranscripts.isFetching ? (
-            <Text style={tw`text-2xl font-bold leading-[0]`}>Generating...</Text>
-          ) : (
-            queryTranscripts.isSuccess && (
-              <Text style={tw`text-2xl font-bold leading-[0]`}>
-                Echoing on {<Text style={tw`font-bold text-amber-500`}>#{transcripts!.topic}</Text>}
-              </Text>
-            )
-          )}
+          <Text style={tw`text-2xl font-bold leading-[0]`}>
+            {session.status === EchoSessionStatus.LOADING_NEW
+              ? "Loading..."
+              : session.status === EchoSessionStatus.COMPLETED
+                ? "Echo Summary"
+                : "Echo Session"}
+          </Text>
         </View>
-        {!disableProgress && (
-          <Pressable onPress={() => onProgress()} style={({ pressed }) => tw.style(pressed && "opacity-50")}>
-            {attempted ? (
-              progress + 1 === transcripts?.items.length ? (
-                <CheckIcon color={tw.color("green-500")} size={26} strokeWidth={2.5} />
-              ) : (
-                <ArrowRightIcon color={tw.color("green-500")} size={26} strokeWidth={2.5} />
-              )
-            ) : (
+        {session.status === EchoSessionStatus.LOADING_NEXT && <Spinner size={26} />}
+        {!(
+          session.status === EchoSessionStatus.LOADING_NEW ||
+          session.status === EchoSessionStatus.LOADING_NEXT ||
+          session.status === EchoSessionStatus.COMPLETED ||
+          session.data.completed
+        ) && (
+          <Pressable
+            disabled={disableProceed}
+            onPress={() => onProceed()}
+            style={({ pressed }) => tw.style(pressed && "opacity-50", disableProceed && "opacity-30")}>
+            {session.data.attemptable ? (
               <RedoIcon color={tw.color("red-500")} size={26} strokeWidth={2.5} />
+            ) : (
+              <ArrowRightIcon color={tw.color("green-500")} size={26} strokeWidth={2.5} />
             )}
           </Pressable>
         )}
       </View>
       <View style={[tw`flex-row gap-1.5 px-2 pb-2 pt-1.5`, { backgroundColor: theme.colors.card }]}>
-        {Array.from({ length: 5 }).map((_, index) => (
-          <View
-            key={index}
-            style={tw.style("h-1.5 flex-1 rounded-full", {
-              backgroundColor: !!transcript && index <= progress ? tw.color("sky-500") : theme.colors.border,
-            })}
-          />
-        ))}
+        {Array.from({ length: session.data?.total ?? 1 }).map((_, index) => {
+          let color = theme.colors.border;
+          if (session.status !== EchoSessionStatus.LOADING_NEW) {
+            if (session.status === EchoSessionStatus.COMPLETED) {
+              color = session.data.attempts[index].length > 0 ? tw.color("green-500")! : tw.color("red-500")!;
+            } else {
+              if (index <= session.data.progress) {
+                if (session.data.attempts[index].length > 0) color = tw.color("green-500")!;
+                else color = index === session.data.progress ? tw.color("sky-500")! : tw.color("red-500")!;
+              }
+            }
+          }
+          return <View key={index} style={tw.style("h-1.5 flex-1 rounded-full", { backgroundColor: color })} />;
+        })}
       </View>
     </>
   );
 };
 
-const getScoringColor = (x: number) => {
-  if (x >= 75) return tw.color("green-500");
-  if (x >= 50) return tw.color("yellow-500");
-  return tw.color("red-500");
-};
+const AttemptSheet = ({
+  ref,
+  attempt,
+  autoplay = false,
+  onWillDismiss,
+}: {
+  ref?: React.Ref<TrueSheet>;
+  attempt: Attempt;
+  autoplay: boolean;
+  onWillDismiss?: () => void;
+}) => {
+  const theme = useTheme();
 
-// FIXME: handle query/mutation errors
-export default function MainLearnEchoScreen() {
-  const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const player = useAudioPlayer();
-  const recorder = useAudioRecorder(RECORDING_OPTIONS);
-  const recorderState = useAudioRecorderState(recorder);
+  const token = useAtomValue($token);
 
-  const flipped = useSharedValue(false);
-  const [_flipped, setFlipped] = useState(false);
-  const [height, setHeight] = useState(0);
-  const [progress, setProgress] = useState(0);
-
-  useAnimatedReaction(
-    () => flipped.value,
-    (value) => runOnJS(setFlipped)(value),
-  );
-
-  const { data: transcripts, refetch: refetchTranscripts, ...queryTranscripts } = useEchoTranscriptsQuery();
-
-  const transcript = useMemo(
-    () => (!queryTranscripts.isFetching ? transcripts?.items[progress] : undefined),
-    [progress, transcripts, queryTranscripts.isFetching],
-  );
-
-  const { reset: resetMutation, ...mutation } = useEchoMutation(transcript?.id);
-  const { data: result, ...queryResult } = useEchoResultQuery(mutation.isSuccess ? transcript?.id : undefined);
-
-  const handleNext = () => {
-    if (progress < transcripts!.items.length - 1) {
-      resetMutation();
-      player.replace("");
-      flipped.value = false;
-      setProgress((prev) => prev + 1);
-    } else {
-      router.dismiss();
-    }
-  };
-
-  const handleProgress = () => {
-    if (queryResult.isSuccess) {
-      handleNext();
-    } else {
-      Alert.alert("Relinquish", "Are you sure you want to relinquish this attempt?", [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Relinquish",
-          style: "destructive",
-          onPress: handleNext,
-        },
-      ]);
-    }
-  };
-
-  useNavigationOptions({
-    header: () => (
-      <Header
-        attempted={queryResult.isSuccess}
-        transcript={transcript}
-        progress={progress}
-        onProgress={handleProgress}
-        disableProgress={
-          queryTranscripts.isFetching || mutation.isPending || queryResult.isLoading || recorderState.isRecording
+  const player = useAudioPlayer(
+    autoplay
+      ? {
+          uri: `${API_URL}/echo/tts`,
+          headers: { Authorization: `Bearer ${token}` },
         }
-      />
-    ),
-  });
+      : null,
+  );
 
-  // handle result once available
   useEffect(() => {
-    if (queryResult.isSuccess) {
-      if (result === null) {
-        resetMutation();
-        Alert.alert("Speak Up!", "We couldn't hear you. Try to speak louder and clearer.");
-      } else {
-        // player.replace(result!.feedback.audio);
-        // player.seekTo(0);
-        // player.play();
-      }
+    if (autoplay) {
+      player.play();
     }
-  }, [router, player, transcript, result, queryResult.isSuccess, resetMutation]);
-
-  const handlePronounce = () => {
-    player.replace(transcript!.audio);
-    player.seekTo(0);
-    player.play();
-  };
-
-  const handleStartRecording = async () => {
-    player.replace("");
-    {
-      await setAudioModeAsync({
-        allowsRecording: true,
-        playsInSilentMode: true,
-      });
-      await recorder.prepareToRecordAsync();
-      recorder.record();
-    }
-  };
-
-  const handleStopRecording = async () => {
-    const duration = recorderState.durationMillis;
-    {
-      await recorder.stop();
-      await setAudioModeAsync({
-        allowsRecording: false,
-        playsInSilentMode: true,
-      });
-    }
-    if (recorder.uri && duration >= RECORDING_DURATION_THRESHOLD) {
-      const audio = await getLocalFileBase64(recorder.uri);
-      mutation.mutate(audio, { onError: (error) => Alert.alert(error.message) });
-    }
-  };
-
-  const frontCardAnimatedStyle = useAnimatedStyle(() => {
-    const spin = interpolate(Number(flipped.value), [0, 1], [0, 180]);
-    const rotate = withTiming(`${spin}deg`, { duration: 500 });
-    return { transform: [{ rotateY: rotate }], backfaceVisibility: "hidden" };
-  });
-
-  const backCardAnimatedStyle = useAnimatedStyle(() => {
-    const spin = interpolate(Number(flipped.value), [0, 1], [180, 360]);
-    const rotate = withTiming(`${spin}deg`, { duration: 500 });
-    return { transform: [{ rotateY: rotate }], backfaceVisibility: "hidden" };
-  });
-
-  const transcriptCard = [transcript?.text, transcript?.sequence.replaceAll("/", "")];
-
-  const resultCard = [
-    result?.pronunciation.words.map(([word, alignments], key) => {
-      const score = alignments.reduce((a, b) => a + b.score, 0) / alignments.length;
-      const color = getScoringColor(score * 100);
-      return (
-        <Text key={key} style={{ color, fontFamily: "" }}>
-          {`${word} `}
-        </Text>
-      );
-    }),
-    result?.pronunciation.words.map(([, alignments]) =>
-      alignments.map(({ score, token }, key) => (
-        <Text key={key} style={{ color: getScoringColor(score * 100), fontFamily: "" }}>
-          {token}
-          {key + 1 === alignments.length ? " " : null}
-        </Text>
-      )),
-    ),
-  ];
+  }, [autoplay, player]);
 
   const score = useMemo(() => {
-    if (!result) return undefined;
-    const scores = result.pronunciation.alignments.map((a) => a.score);
-    const total = scores.reduce((a, b) => a + b, 0);
-    const percentage = Math.round((total / scores.length) * 100);
-    const color = getScoringColor(percentage);
+    const color = getScoreColor(attempt.pronunciation.score);
+    const percentage = Math.round(attempt.pronunciation.score * 100);
     let message = "bruh";
     if (percentage >= 90) message = "tuff";
     else if (percentage >= 75) message = "bro slayed";
     else if (percentage >= 50) message = "that's mid";
     else if (percentage >= 25) message = "skill issue";
     return { percentage, color, message };
-  }, [result]);
+  }, [attempt]);
+
+  return (
+    <TrueSheet
+      ref={ref}
+      detents={[0.5]}
+      initialDetentIndex={0}
+      initialDetentAnimated={true}
+      onWillDismiss={() => {
+        if (autoplay) {
+          player.pause();
+        }
+        onWillDismiss?.();
+      }}>
+      <ScrollView contentContainerStyle={tw`gap-4 p-4`}>
+        <View style={tw`mt-8 items-center justify-center gap-2`}>
+          <Text style={[tw`text-center text-6xl font-bold tracking-tighter`, { color: score.color }]}>
+            {score.percentage}%
+          </Text>
+          <Text style={[tw`text-center text-2xl font-medium`, { color: score.color }]}>{score.message}</Text>
+        </View>
+        <View style={[tw`rounded-2xl p-4`, { backgroundColor: theme.colors.background }]}>
+          <Text style={tw`text-base`}>{attempt.feedback}</Text>
+        </View>
+        <PronunciationBreakdown pronunciation={attempt.pronunciation} />
+      </ScrollView>
+    </TrueSheet>
+  );
+};
+
+const SummaryView = ({ session }: { session: Session }) => {
+  const theme = useTheme();
+  const insets = useSafeAreaInsets();
+
+  const [selection, setSelection] = useState<number | null>(null);
+
+  const getBestAttempt = (attempts: Attempt[]) => {
+    if (attempts.length === 0) return undefined;
+    return attempts.reduce((best, attempt) =>
+      attempt.pronunciation.score > best.pronunciation.score ? attempt : best,
+    );
+  };
+
+  const attempt = useMemo(() => {
+    if (selection === null) return undefined;
+    const attempts = session.attempts[selection];
+    return getBestAttempt(attempts);
+  }, [session, selection]);
+
+  return (
+    <>
+      <View style={[tw`flex-1 gap-6 px-4 py-6`, { paddingBottom: insets.bottom }]}>
+        <View style={tw`my-8 items-center justify-center gap-2`}>
+          <Text style={tw`text-center text-6xl font-bold tracking-tighter text-sky-500`}>
+            {`+ ${session.points} XP`}
+          </Text>
+          {session.expense > 0 && (
+            <Text style={tw`text-center text-2xl font-bold tracking-tighter text-rose-500`}>
+              {`- ${session.expense} XP expense`}
+            </Text>
+          )}
+        </View>
+        <View style={tw`rounded-xl border-2 border-zinc-500/50 p-3`}>
+          <Text
+            style={[
+              tw`absolute -top-4 left-2.5 px-1.5 text-lg font-bold text-amber-500`,
+              { backgroundColor: theme.colors.background },
+            ]}>
+            #{session.scenario.topic}
+          </Text>
+          <Text style={tw`text-lg font-medium leading-tight`}>{session.scenario.scenario}</Text>
+        </View>
+        <View style={tw`grow gap-2`}>
+          <View style={tw`flex-row items-center justify-between gap-2`}>
+            <Text
+              style={tw`text-base font-medium uppercase text-neutral-500`}>{`${session.scenario.transcripts.length} Transcripts`}</Text>
+            <Text style={tw`text-base font-medium uppercase text-neutral-500`}>
+              {`${session.attempts.reduce((total, attempts) => total + attempts.length, 0)} Attempts`}
+            </Text>
+          </View>
+          <ScrollView style={tw`grow rounded-xl border-2 border-zinc-500/50`} contentContainerStyle={tw`gap-2.5 p-3`}>
+            {session.scenario.transcripts.map((transcript, index) => {
+              const attempts = session.attempts[index];
+              const attempt = getBestAttempt(attempts);
+              const color = attempt ? getScoreColor(attempt.pronunciation.score) : undefined;
+              return (
+                <Pressable
+                  key={index}
+                  onPress={() => setSelection(index)}
+                  style={tw.style(
+                    "flex-row items-center justify-between gap-4 rounded-lg border-2 p-2.5",
+                    selection === index ? "border-zinc-500" : "border-zinc-500/50",
+                  )}>
+                  <Text style={tw`text-xl font-bold text-sky-500`}>#{index + 1}</Text>
+                  <Text style={tw`shrink text-left text-base`} numberOfLines={2}>
+                    {transcript.text}
+                  </Text>
+                  {attempt ? (
+                    <Text style={[tw`text-xl font-medium`, { color }]}>
+                      {`${Math.round(attempt.pronunciation.score * 100)}%`}
+                    </Text>
+                  ) : (
+                    <XIcon color={tw.color("red-500")} size={20} strokeWidth={2.5} />
+                  )}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </View>
+      {attempt && <AttemptSheet autoplay={false} attempt={attempt} onWillDismiss={() => setSelection(null)} />}
+    </>
+  );
+};
+
+export default function MainLearnEchoScreen() {
+  const theme = useTheme();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const client = useQueryClient();
+
+  const { session, submit, buy, proceed, abort, end } = useEchoSession({
+    onClose: () => {
+      if (router.canDismiss()) router.dismissAll();
+      client.invalidateQueries({ queryKey: ["user", "me"] });
+    },
+  });
+
+  const audio = useAudio();
+  const sheet = useRef<TrueSheet>(null);
+  const { data: user } = useCurrentUserQuery();
+
+  const attempt = useMemo(() => {
+    if (!session.data || session.data.completed) return undefined;
+    if (session.data.attemptable) return undefined;
+    const attempts = session.data.attempts[session.data.progress];
+    return attempts.length > 0 ? attempts[attempts.length - 1] : undefined;
+  }, [session.data]);
+
+  const transcript = useMemo(() => {
+    if (!session.data || session.data.completed) return undefined;
+    return session.data.scenario.transcripts[session.data.progress];
+  }, [session.data]);
+
+  const buyable = useMemo(() => {
+    if (user === undefined || session.data === undefined) return false;
+    return user.points.total >= session.data.expense + session.data.price;
+  }, [session.data, user]);
+
+  const _flipped = useSharedValue(false);
+  const [flipped, setFlipped] = useState(false);
+  const [height, setHeight] = useState(0);
+
+  const [playbacking, setPlaybacking] = useState(false);
+
+  useAnimatedReaction(
+    () => _flipped.value,
+    (value) => runOnJS(setFlipped)(value),
+  );
+
+  useSetNavigationOptions({
+    header: () => (
+      <Header session={session} recorderState={audio.recorderState} onProceed={handleProceed} onClose={handleClose} />
+    ),
+  });
+
+  const handleProceed = () => {
+    const callback = () => {
+      proceed();
+      audio.player.replace("");
+      _flipped.value = false;
+    };
+    if (attempt) return callback();
+    Alert.alert("Skip Attempt", "Are you sure you want to skip this attempt?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Skip",
+        style: "destructive",
+        onPress: callback,
+      },
+    ]);
+  };
+
+  const handleClose = () => {
+    if (session.status === EchoSessionStatus.COMPLETED) return end();
+    Alert.alert("Abort Session", "Are you sure you want to abort this session?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Abort",
+        style: "destructive",
+        onPress: () => abort(),
+      },
+    ]);
+  };
+
+  const handlePronounce = () => {
+    setPlaybacking(false);
+    audio.player.replace(transcript!.audio);
+    audio.player.seekTo(0).then(() => audio.player.play());
+  };
+
+  const handlePlayback = () => {
+    if (!attempt) return;
+    setPlaybacking(true);
+    audio.player.replace(attempt.audio);
+    audio.player.seekTo(0).then(() => audio.player.play());
+  };
+
+  const handleBuy = () => {
+    Alert.alert("Buy Attempt", "Are you sure you want to buy an extra attempt for this transcript?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Buy",
+        style: "default",
+        onPress: () => buy(),
+      },
+    ]);
+  };
+
+  const handleSubmit = async (data: string) => {
+    const result = await submit(data);
+    if (result === null) Alert.alert("Speak Up!", "We couldn't hear you. Try to speak louder and clearer.");
+  };
+
+  const frontCardAnimatedStyle = useAnimatedStyle(() => {
+    const spin = interpolate(Number(_flipped.value), [0, 1], [0, 180]);
+    const rotate = withTiming(`${spin}deg`, { duration: 500 });
+    return { transform: [{ rotateY: rotate }], backfaceVisibility: "hidden" };
+  });
+
+  const backCardAnimatedStyle = useAnimatedStyle(() => {
+    const spin = interpolate(Number(_flipped.value), [0, 1], [180, 360]);
+    const rotate = withTiming(`${spin}deg`, { duration: 500 });
+    return { transform: [{ rotateY: rotate }], backfaceVisibility: "hidden" };
+  });
+
+  const transcriptCard = useMemo(
+    () => (transcript ? [transcript.text, transcript.sequence.replaceAll("/", "")] : undefined),
+    [transcript],
+  );
+
+  const attemptCard = useMemo(
+    () =>
+      attempt
+        ? [
+            attempt.pronunciation.words.map(([word, { score }], key) => (
+              <Text key={key} style={{ color: getScoreColor(score), fontFamily: "" }}>
+                {`${word} `}
+              </Text>
+            )),
+            attempt.pronunciation.words.map(([, { alignments }]) =>
+              alignments.map(({ score, token }, key) => (
+                <Text key={key} style={{ color: getScoreColor(score), fontFamily: "" }}>
+                  {token}
+                  {key + 1 === alignments.length ? " " : null}
+                </Text>
+              )),
+            ),
+          ]
+        : undefined,
+    [attempt],
+  );
+
+  if (session.status === EchoSessionStatus.COMPLETED)
+    return (
+      <Animated.View entering={FadeIn.duration(200)} style={tw`flex-1`}>
+        <SummaryView session={session.data} />
+      </Animated.View>
+    );
 
   return (
     <View style={[tw`flex-1 items-center justify-between gap-4 p-4`, { paddingBottom: insets.bottom }]}>
-      {queryTranscripts.isFetching ? (
-        <View style={tw`w-4/6 flex-grow items-center justify-center gap-8`}>
+      {session.status === EchoSessionStatus.LOADING_NEW ? (
+        <View style={tw`w-4/6 grow items-center justify-center gap-8`}>
           <Spinner size={48} />
-          <Text style={tw`text-center text-base font-medium leading-tight text-zinc-500`}>
+          <Text style={tw`text-center text-base font-medium leading-tight text-neutral-500`}>
             Please ensure you are in a quiet environment for the best experience.
           </Text>
         </View>
       ) : (
-        queryTranscripts.isSuccess && (
-          <>
-            <View style={tw`rounded-xl border-2 border-zinc-500/50 p-2.5`}>
-              <Text style={tw`text-lg font-medium leading-tight`}>{transcripts!.scenario}</Text>
-            </View>
-            {result && (
-              <View style={tw`mt-8 items-center justify-center gap-2`}>
-                <Text style={[tw`text-center text-5xl font-bold tracking-tighter`, { color: score!.color }]}>
-                  {score!.percentage}%
-                </Text>
-                <Text style={[tw`text-center text-2xl font-medium`, { color: score!.color }]}>{score!.message}</Text>
-              </View>
-            )}
-            <View style={tw`w-full flex-grow items-center justify-center`}>
-              <View style={tw`relative items-center justify-center`}>
-                {(result ? resultCard : transcriptCard).map((c, index) => (
-                  <AnimatedPressable
-                    key={index}
-                    onPress={() => (flipped.value = !flipped.value)}
-                    onLongPress={handlePronounce}
-                    style={[
-                      tw.style(
-                        "absolute items-center justify-center rounded-3xl border-2 border-zinc-500/50",
-                        "bg-zinc-100 p-8 dark:bg-zinc-950",
-                      ),
-                      index === 0 ? frontCardAnimatedStyle : backCardAnimatedStyle,
-                    ]}
-                    onLayout={({ nativeEvent }) => setHeight((height) => Math.max(height, nativeEvent.layout.height))}>
-                    <Text
+        <>
+          <View style={tw`rounded-xl border-2 border-zinc-500/50 p-3`}>
+            <Text
+              style={[
+                tw`absolute -top-4 left-2.5 px-1.5 text-lg font-bold text-amber-500`,
+                { backgroundColor: theme.colors.background },
+              ]}>
+              #{session.data.scenario.topic}
+            </Text>
+            <Text style={tw`text-lg font-medium leading-tight`}>{session.data.scenario.scenario}</Text>
+          </View>
+          {session.status !== EchoSessionStatus.LOADING_NEXT && (
+            <>
+              <View style={tw`w-full grow items-center justify-center`}>
+                <Animated.View
+                  entering={SlideInRight}
+                  exiting={SlideOutLeft}
+                  style={tw`relative items-center justify-center`}>
+                  {(attemptCard ?? transcriptCard ?? []).map((c, index) => (
+                    <AnimatedPressable
+                      key={index}
+                      onPress={() => (_flipped.value = !_flipped.value)}
+                      onLongPress={handlePronounce}
                       style={[
-                        tw`text-center text-3xl font-medium leading-normal`,
-                        { fontFamily: "" }, // use default font for transcript text
-                      ]}>
-                      {c}
-                    </Text>
-                  </AnimatedPressable>
-                ))}
+                        tw.style(
+                          "absolute items-center justify-center rounded-3xl border-2 border-zinc-500/50",
+                          "bg-zinc-100 p-8 dark:bg-zinc-950",
+                        ),
+                        index === 0 ? frontCardAnimatedStyle : backCardAnimatedStyle,
+                      ]}
+                      onLayout={({ nativeEvent }) =>
+                        setHeight((height) => Math.max(height, nativeEvent.layout.height))
+                      }>
+                      <Text
+                        style={[
+                          tw`text-center text-3xl font-medium leading-normal`,
+                          { fontFamily: "" }, // use default font for transcript text
+                        ]}>
+                        {c}
+                      </Text>
+                    </AnimatedPressable>
+                  ))}
+                </Animated.View>
+                {!attempt && (
+                  <View style={[tw`mt-5 items-center justify-center`, { top: height / 2 }]}>
+                    <View style={tw`flex-row items-center gap-1`}>
+                      <FlipHorizontalIcon size={14} color={tw.color("neutral-500")} />
+                      <Text style={tw`text-sm font-medium text-neutral-500`}>
+                        Tap to see {flipped ? "text" : "IPA"} transcript
+                      </Text>
+                    </View>
+                    <View style={tw`flex-row items-center gap-1`}>
+                      <EarIcon size={14} color={tw.color("neutral-500")} />
+                      <Text style={tw`text-sm font-medium text-neutral-500`}>
+                        Long Press to play reference pronunciation
+                      </Text>
+                    </View>
+                  </View>
+                )}
               </View>
-              {queryResult.isPending && (
-                <View style={[tw`mt-5 items-center justify-center`, { top: height / 2 }]}>
-                  <View style={tw`flex-row items-center gap-1`}>
-                    <FlipHorizontalIcon size={14} color={tw.color("zinc-500")} />
-                    <Text style={tw`text-sm font-medium text-zinc-500`}>
-                      Tap to see {_flipped ? "text" : "IPA"} transcript
-                    </Text>
-                  </View>
-                  <View style={tw`flex-row items-center gap-1`}>
-                    <EarIcon size={14} color={tw.color("zinc-500")} />
-                    <Text style={tw`text-sm font-medium text-zinc-500`}>
-                      Long Press to play reference pronunciation
-                    </Text>
-                  </View>
-                </View>
-              )}
-            </View>
-            {queryResult.isPending && (
-              <View style={tw`h-1/6 w-full items-center justify-center px-8`}>
-                {mutation.isPending || queryResult.isLoading ? (
-                  <View style={tw`flex-row items-center gap-2`}>
-                    <Spinner />
-                    <Text style={tw`font-medium text-neutral-500`}>Analyzing your pronunciation...</Text>
-                  </View>
-                ) : (
-                  mutation.isIdle && (
-                    <>
-                      {!recorderState.isRecording && (
-                        <Text style={tw`absolute -top-2 text-sm font-medium`}>Hold to Speak</Text>
-                      )}
+              <View style={tw`h-1/7 w-full items-center justify-center px-4`}>
+                {attempt ? (
+                  <>
+                    <Pressable
+                      onPress={() => sheet.current?.present()}
+                      style={({ pressed }) =>
+                        tw.style(
+                          "absolute -top-12 flex-row items-center gap-1.5 rounded-full border-2 border-transparent bg-zinc-200 px-2.5 py-1.5 dark:bg-zinc-800",
+                          pressed && "border-zinc-500/50",
+                        )
+                      }>
+                      <StarsIcon color={theme.colors.text} size={18} />
+                      <Text style={tw`text-base font-medium`}>
+                        {`Result — ${Math.round(attempt.pronunciation.score * 100)}%`}
+                      </Text>
+                    </Pressable>
+                    <View style={tw`w-full flex-row items-center justify-center`}>
                       <Pressable
                         style={({ pressed }) =>
                           tw.style(
-                            "mx-auto rounded-full p-6",
+                            "absolute left-1/2 -translate-x-1/2",
+                            "rounded-full bg-sky-500 p-4",
                             pressed && "opacity-80",
-                            recorderState.isRecording ? "bg-red-500" : "bg-green-500",
+                            audio.playerStatus.playing && playbacking && "opacity-50",
                           )
                         }
-                        onLongPress={handleStartRecording}
-                        onPressOut={handleStopRecording}>
-                        {recorderState.isRecording ? (
-                          <AudioLinesIcon color="white" size={32} />
-                        ) : (
-                          <MicIcon color="white" size={32} />
-                        )}
+                        disabled={audio.playerStatus.playing && playbacking}
+                        onPress={handlePlayback}>
+                        <PlayIcon color="white" fill="white" size={32} />
                       </Pressable>
-                    </>
-                  )
+                      <View style={tw`ml-auto items-center justify-center gap-2`}>
+                        <Pressable
+                          style={({ pressed }) =>
+                            tw.style(
+                              "flex-row items-center justify-center gap-1.5 px-2 py-1",
+                              "rounded-full border-2 border-transparent bg-amber-200 dark:bg-amber-800",
+                              pressed && "border-amber-500/50",
+                              !buyable && "opacity-50",
+                            )
+                          }
+                          disabled={!buyable}
+                          onPress={handleBuy}>
+                          <RotateCwIcon color={theme.colors.text} size={16} />
+                          <Text style={tw`text-sm font-medium`}>Try Again</Text>
+                        </Pressable>
+                        <Text style={tw`absolute -bottom-6 text-center text-sm font-medium text-amber-500`}>
+                          {`Costs ${session.data.price} XP`}
+                        </Text>
+                      </View>
+                    </View>
+                    {!(audio.playerStatus.playing && playbacking) && (
+                      <Text style={tw`absolute bottom-0 text-sm font-medium`}>Playback Your Speech</Text>
+                    )}
+                  </>
+                ) : (
+                  <RecordButton
+                    audio={audio}
+                    isPending={session.status === EchoSessionStatus.PENDING_ATTEMPT}
+                    pendingText="Analyzing your pronunciation..."
+                    onSubmit={handleSubmit}
+                  />
                 )}
               </View>
-            )}
-          </>
-        )
+            </>
+          )}
+        </>
       )}
-      {result && (
-        <View style={tw`w-full gap-2`}>
-          <Text style={tw`text-base font-medium text-zinc-500`}>FEEDBACK</Text>
-          <ScrollView
-            alwaysBounceVertical={false}
-            style={tw`max-h-52 rounded-2xl border-2 border-zinc-500/50`}
-            contentContainerStyle={tw`p-4`}>
-            <Text style={tw`text-lg`}>{result?.feedback.text}</Text>
-          </ScrollView>
-        </View>
-      )}
+      {attempt && <AttemptSheet ref={sheet} autoplay={true} attempt={attempt} />}
     </View>
   );
 }

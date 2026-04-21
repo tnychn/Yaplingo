@@ -1,0 +1,109 @@
+from contextlib import asynccontextmanager
+
+from fastapi import APIRouter, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, status
+from fastapi.responses import StreamingResponse
+
+from server.core.textspeech import DeepgramTextSpeech
+
+from ..dependencies import Service, User
+from ..schemas.echo import EchoInput, EchoOutputType, EchoResponse
+from ..settings import settings
+from ..websocket import SessionManager, Sessions
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.sessions = SessionManager()
+    app.state.tts = DeepgramTextSpeech(api_key=settings.deepgram_api_key.get_secret_value())
+    yield
+
+
+router = APIRouter(lifespan=lifespan)
+
+
+@router.get("/tts")
+async def stream_tts(
+    request: Request,
+    user: User,
+    service: Service,
+):
+    session = await service.echo.session(user, generate=False)
+    if session is None or session.state.completed:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="No Active Session")
+
+    attempts = session.state.attempts[session.state.progress]
+    if not attempts:
+        raise HTTPException(status_code=status.HTTP_425_TOO_EARLY, detail="No Attempts Available")
+
+    text = attempts[-1].feedback
+    tts: DeepgramTextSpeech = request.app.state.tts
+
+    return StreamingResponse(
+        tts(text),
+        media_type=DeepgramTextSpeech.MIME,
+        headers={"Cache-Control": "no-cache"},
+    )
+
+
+@router.websocket("/ws")
+async def websocket_session(
+    ws: WebSocket,
+    user: User,
+    sessions: Sessions,
+    service: Service,
+):
+
+    async def send_response(data: EchoOutputType) -> None:
+        await ws.send_json(EchoResponse.dump(data))
+
+    async def receive_input() -> EchoInput:
+        data = await ws.receive_json()
+        return EchoInput.model_validate(data)
+
+    await sessions.accept(user, ws)
+
+    try:
+        # generate initial session state
+        session = await service.echo.session(
+            user,
+            generate=True,
+            insights=lambda: service.user.get_insights(user),
+        )
+        await session.prepare()
+        await send_response(session.state)
+        # start session loop
+        while not session.state.completed:
+            # start attempt loop
+            while True:
+                input = await receive_input()
+                match input.type:
+                    case EchoInput.Type.NEXT:
+                        break
+                    case EchoInput.Type.BUY:
+                        await session.buy()
+                        await session.refresh()
+                        await send_response(session.state)
+                        continue
+                    case EchoInput.Type.ABORT:
+                        return await session.abort()
+                    case EchoInput.Type.AUDIO:
+                        if not session.state.attemptable:
+                            continue
+                        if input.input is None:
+                            continue
+                        attempt = await session.attempt(input.input)
+                        await send_response(attempt)
+            # proceed to next
+            await session.proceed()
+            await session.refresh()
+            await send_response(session.state)
+        # wrap up session
+        await session.complete()
+        await ws.receive()
+    except WebSocketDisconnect:
+        ...
+    finally:
+        await sessions.close(user, ws)
+
+
+__all__ = ["router"]

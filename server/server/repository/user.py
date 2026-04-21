@@ -1,0 +1,94 @@
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlmodel import col, select
+from sqlmodel.ext.asyncio.session import AsyncSession
+from ulid import ULID
+
+from .entities import User
+from .exceptions import EntityExistsError
+
+
+class UserRepository:
+    def __init__(self, session: async_sessionmaker[AsyncSession]):
+        self._session = session
+
+    async def dump(self, user: User) -> User:
+        try:
+            async with self._session() as session:
+                session.add(user)
+                await session.commit()
+        except IntegrityError:
+            raise EntityExistsError()
+        return user
+
+    async def get_one(self, uid_name: ULID | str) -> User | None:
+        async with self._session() as session:
+            if isinstance(uid_name, ULID):
+                user = await session.get(User, uid_name)
+            else:
+                query = select(User).where(User.name == uid_name)
+                user = (await session.exec(query)).one_or_none()
+            return user
+
+    async def get_many(self, uids: list[ULID]) -> list[User]:
+        if not uids:
+            return []
+        async with self._session() as session:
+            query = select(User).where(col(User.id).in_(uids))
+            results = await session.exec(query)
+            return list(results.all())
+
+    async def increment_points(self, user: User, points_to_add: int) -> None:
+        async with self._session() as session:
+            user.points += points_to_add
+            session.add(user)
+            await session.commit()
+
+    async def increment_gems(self, user: User, gems_to_add: int) -> None:
+        async with self._session() as session:
+            user.gems += gems_to_add
+            session.add(user)
+            await session.commit()
+
+    async def increment_streak(self, user: User) -> None:
+        tz = ZoneInfo(user.timezone)
+        now = datetime.now(tz)
+        today = now.date()
+        if user.streak == 0:
+            new_streak = 1
+        else:
+            streaked_date = user.streaked_at.astimezone(tz).date()
+            expected = streaked_date + timedelta(days=1)
+            new_streak = user.streak + 1 if expected == today else 1
+        async with self._session() as session:
+            user.streak = new_streak
+            user.streaked_at = now
+            session.add(user)
+            await session.commit()
+
+    async def reset_streak(self, user: User) -> None:
+        async with self._session() as session:
+            user.streak = 0
+            session.add(user)
+            await session.commit()
+
+    async def increment_streak_freezes(self, user: User, count: int = 1) -> None:
+        async with self._session() as session:
+            user.streak_freezes += count
+            session.add(user)
+            await session.commit()
+
+    async def consume_streak_freeze(self, user: User) -> None:
+        tz = ZoneInfo(user.timezone)
+        yesterday = datetime.now(tz) - timedelta(days=1)
+        async with self._session() as session:
+            user.streak_freezes -= 1
+            user.streaked_at = yesterday
+            session.add(user)
+            await session.commit()
+
+
+__all__ = ["UserRepository"]

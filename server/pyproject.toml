@@ -3,14 +3,18 @@ name = "yaplingo"
 version = "0.1.0"
 requires-python = ">=3.10,<3.11"
 dependencies = [
-    "uvicorn>=0.35.0", # tool to actually run the server
+    "uvicorn>=0.35.0",
     "fastapi>=0.116.1",
-    "python-multipart>=0.0.20", # support file upload in FastAPI
+    "websockets>=15.0.1",
+    "python-multipart>=0.0.20",
     "pydantic>=2.12.3",
+    "pydantic-extra-types>=2.11.0",
     "python-ulid[pydantic]>=3.1.0",
     "pydantic-settings>=2.11.0",
     "argon2-cffi>=25.1.0",
     "pyjwt>=2.10.1",
+    "taskiq-redis>=1.2.1",
+    "taskiq>=0.12.0",
     "redis>=7.1.0",
     "sqlalchemy[asyncio]>=2.0.44",
     "sqlmodel>=0.0.27",
@@ -24,10 +28,21 @@ dependencies = [
     "kokoro>=0.9.4",
     "gtts",
     "phonemizer",
+    "pycountry>=24.6.1",
+    "deepgram-sdk>=4.0.0",
+    "faster-whisper>=1.2.1",
+    "multiavatar>=1.0.3",
 ]
 
 [tool.ruff]
 line-length = 120
+
+[tool.ty.src]
+include = ["server"]
+exclude = ["vendor"]
+
+[tool.uv]
+config-settings = { editable_mode = "compat" }
 
 [tool.uv.sources]
 gtts = { path = "vendor/gtts", editable = true }

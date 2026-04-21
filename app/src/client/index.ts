@@ -1,51 +1,15 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
-import axios, { AxiosError } from "axios";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { getCalendars, getLocales } from "expo-localization";
+import { type AxiosError, type AxiosRequestConfig } from "axios";
 import { useSetAtom } from "jotai";
 
-import store, { $token } from "../store";
-import type { Result, Transcripts, User } from "./models";
-
-const API_URL = process.env.EXPO_PUBLIC_API_URL;
-
-const client = axios.create({
-  baseURL: API_URL,
-  responseType: "json",
-});
-
-// attach token to every request
-client.interceptors.request.use((config) => {
-  const token = store.get($token);
-  if (token) config.headers.setAuthorization(`Bearer ${token}`);
-  return config;
-});
-
-// log error responses globally
-client.interceptors.response.use(undefined, (error) => {
-  if (error instanceof AxiosError) {
-    if (error.status === 401) store.set($token, ""); // clear token on unauthorized
-    console.error(`${error.message}: ${error.response?.data as string}`);
-  }
-  return Promise.reject(error);
-});
-
-export const useAuthedUserQuery = () =>
-  useQuery<User | null, AxiosError>({
-    queryKey: ["auth", "me"],
-    queryFn: async () => {
-      const response = await client.get("/auth/me", {
-        timeout: 5000,
-        validateStatus: (status) => [200, 401, 403].includes(status),
-      });
-      if (response.status === 401) {
-        store.set($token, "");
-      }
-      return response.data;
-    },
-    retry: true,
-    staleTime: Infinity,
-  });
+import { $token } from "../store";
+import client from "./client";
+import type { Achievement, Leaderboard, ShopItem, User, UserInsights, UserStats } from "./models";
 
 export const useLoginMutation = () => {
+  const qclient = useQueryClient();
+
   const setToken = useSetAtom($token);
 
   type Data = { token: string };
@@ -60,10 +24,13 @@ export const useLoginMutation = () => {
       return response.data;
     },
     onSuccess: ({ token }) => setToken(token),
+    onSettled: () => qclient.invalidateQueries({ queryKey: ["user", "me"] }),
   });
 };
 
 export const useRegisterMutation = () => {
+  const qclient = useQueryClient();
+
   const setToken = useSetAtom($token);
 
   type Data = { token: string };
@@ -71,56 +38,116 @@ export const useRegisterMutation = () => {
 
   return useMutation<Data, AxiosError, Variables>({
     mutationFn: async (data) => {
+      const [locale] = getLocales();
+      const [calendar] = getCalendars();
       const response = await client.post("/auth/register", {
         name: data.username,
         password: data.password,
-        language: "en", // TODO: remove hardcoding
+        language: locale.languageCode,
+        timezone: calendar.timeZone,
       });
       return response.data;
     },
     onSuccess: ({ token }) => setToken(token),
+    onSettled: () => qclient.invalidateQueries({ queryKey: ["user", "me"] }),
   });
 };
 
-export const useEchoTranscriptsQuery = () =>
-  useQuery<Transcripts, AxiosError>({
-    queryKey: ["echo", "transcripts"],
+export const useCurrentUserQuery = ({ check = false }: { check?: boolean } = {}) =>
+  useQuery<User, AxiosError>({
+    queryKey: check ? [] : ["user", "me"],
     queryFn: async () => {
-      const response = await client.get<Transcripts>(`/echo/transcripts`);
+      const options: AxiosRequestConfig = {
+        timeout: 5000,
+        validateStatus: (status) => [200, 401, 403].includes(status),
+      };
+      const response = await client.get("/user/@", check ? options : undefined);
+      return response.data;
+    },
+    retry: true,
+    staleTime: check ? 0 : Infinity,
+  });
+
+export const useCurrentUserInsightsQuery = () =>
+  useQuery<UserInsights | null, AxiosError>({
+    queryKey: ["user", "me", "insights"],
+    queryFn: async () => {
+      const response = await client.get(`/user/@/insights`);
       return response.data;
     },
     staleTime: Infinity,
-    refetchOnMount: "always", // important
   });
 
-export const useEchoMutation = (tid?: string) =>
-  useMutation<void, AxiosError, string>({
-    mutationFn: async (audio: string) => {
-      if (!tid) return;
-      await client.post<void>(`/echo/${tid}`, { audio });
+export const useCurrentUserStatsQuery = () =>
+  useQuery<UserStats, AxiosError>({
+    queryKey: ["user", "me", "stats"],
+    queryFn: async () => {
+      const response = await client.get("/user/@/stats");
+      return response.data;
     },
   });
 
-export const useEchoResultQuery = (tid?: string) =>
-  useQuery<Result | null, AxiosError>({
-    queryKey: ["echo", tid, "result"],
-    queryFn: async ({ client: qclient }) => {
-      while (true) {
-        const { status, data } = await client.get<Result | null>(`/echo/${tid}/result`, {
-          validateStatus: (status) => [200, 204, 425].includes(status),
-        });
-        if (status !== 425) {
-          if (status === 204) {
-            qclient.removeQueries({ queryKey: ["echo", tid, "result"] });
-            return null;
-          }
-          return data;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
+export const useUserQuery = (uid: string) =>
+  useQuery<User, AxiosError>({
+    queryKey: ["user", uid],
+    queryFn: async () => {
+      const response = await client.get(`/user/${uid}`);
+      return response.data;
     },
-    enabled: !!tid,
-    staleTime: Infinity,
   });
 
-export default client;
+export const useLeaderboardQuery = () =>
+  useQuery<Leaderboard, AxiosError>({
+    queryKey: ["game", "leaderboard"],
+    queryFn: async () => {
+      const response = await client.get("/game/leaderboard");
+      return response.data;
+    },
+  });
+
+export const useShopItemsQuery = () =>
+  useQuery<ShopItem[], AxiosError>({
+    queryKey: ["game", "shop"],
+    queryFn: async () => {
+      const response = await client.get("/game/shop");
+      return response.data;
+    },
+  });
+
+export const usePurchaseShopItemMutation = () => {
+  const qclient = useQueryClient();
+  return useMutation<void, AxiosError, { key: string }>({
+    mutationFn: async ({ key }: { key: string }) => {
+      await client.post(`/game/shop/purchase/${key}`);
+    },
+    onSettled: () => {
+      qclient.invalidateQueries({ queryKey: ["user", "me"] });
+      qclient.invalidateQueries({ queryKey: ["game"] });
+    },
+  });
+};
+
+export const useAchievementsQuery = () =>
+  useQuery<Achievement[], AxiosError>({
+    queryKey: ["game", "achievements"],
+    queryFn: async () => {
+      const response = await client.get("/game/achievements");
+      return response.data;
+    },
+  });
+
+export const useClaimAchievementMutation = () => {
+  const qclient = useQueryClient();
+  return useMutation<void, AxiosError, { key: string }>({
+    mutationFn: async ({ key }: { key: string }) => {
+      await client.post(`/game/achievements/claim/${key}`);
+    },
+    onSettled: () => {
+      qclient.invalidateQueries({ queryKey: ["user", "me"] });
+      qclient.invalidateQueries({ queryKey: ["game"] });
+    },
+  });
+};
+
+export * from "./models";
+export * from "./client";
